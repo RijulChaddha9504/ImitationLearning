@@ -1,0 +1,91 @@
+arm_assembly_controller:
+  # Publish all joint states -----------------------------------
+  joint_state_controller:
+    type: joint_state_controller/JointStateController
+    publish_rate: 50
+
+  # Position Controllers --------------------------------------
+  shoulder_flexion_extension_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: shoulder_flexion_extension
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  shoulder_abduction_adduction_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: shoulder_abduction_adduction
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  shoulder_rotation_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: shoulder_rotation
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  elbow_flexion_extension_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: elbow_flexion_extension
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  forearm_rotation_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: forearm_rotation
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  wrist_extension_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: wrist_extension
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  mcp_index_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: mcp_index
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  pip_index_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: pip_index
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  dip_index_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: dip_index
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  mcp_middle_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: mcp_middle
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  pip_middle_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: pip_middle
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  dip_middle_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: dip_middle
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  mcp_ring_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: mcp_ring
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  pip_ring_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: pip_ring
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  dip_ring_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: dip_ring
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  mcp_pinky_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: mcp_pinky
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  pip_pinky_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: pip_pinky
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  dip_pinky_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: dip_pinky
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  cmc_thumb_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: cmc_thumb
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  mcp_thumb_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: mcp_thumb
+    pid: {p: 100.0, i: 0.01, d: 10.0}
+  ip_thumb_position_controller:
+    type: effort_controllers/JointPositionController
+    joint: ip_thumb
+    pid: {p: 100.0, i: 0.01, d: 10.0}

@@ -1,0 +1,9 @@
+<launch>
+
+<rosparam file="$(find arm_assembly_description)/launch/controller.yaml" command="load"/>
+<node name="controller_spawner" pkg="controller_manager" type="spawner" respawn="false" output="screen" ns="arm_assembly" args="shoulder_flexion_extension_position_controller shoulder_abduction_adduction_position_controller shoulder_rotation_position_controller elbow_flexion_extension_position_controller forearm_rotation_position_controller wrist_extension_position_controller mcp_index_position_controller pip_index_position_controller dip_index_position_controller mcp_middle_position_controller pip_middle_position_controller dip_middle_position_controller mcp_ring_position_controller pip_ring_position_controller dip_ring_position_controller mcp_pinky_position_controller pip_pinky_position_controller dip_pinky_position_controller cmc_thumb_position_controller mcp_thumb_position_controller ip_thumb_position_controller joint_state_controller "/>
+<node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" respawn="false" output="screen">
+  <remap from="/joint_states" to="/arm_assembly/joint_states"/>
+</node>
+
+</launch>
