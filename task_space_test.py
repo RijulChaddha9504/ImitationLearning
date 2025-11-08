@@ -114,9 +114,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     while simulation_app.is_running():
         if not args_cli.headless:
             # GUI teleoperation
-            action = teleop.advance()
-            goal_pose[:, 0:3] += action[:, 0:3]
-            # Orientation handled internally
+            pos_delta, rot_delta = teleop.advance()  # unpack tuple
+            # Convert to tensor for IK
+            goal_pose[:, 0:3] += torch.tensor(pos_delta, device=goal_pose.device).unsqueeze(0)
+            # Orientation update can be applied if needed
+            # goal_pose[:, 3:7] += ...  (quaternion handling, if needed)
         else:
             # Headless scripted motion
             delta_pos = 0.01 * torch.sin(torch.tensor(step * 0.1))
@@ -146,6 +148,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         goal_marker.visualize(goal_pose[:, 0:3] + scene.env_origins, goal_pose[:, 3:7])
+
 
 
 def main():
