@@ -24,10 +24,11 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms
 
-# Remove Se3Keyboard import since carb.input is unavailable
-# from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
-
 from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
+
+# ✅ Import keyboard teleoperation only if GUI mode
+if not args_cli.headless:
+    from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
 
 
 @configclass
@@ -97,19 +98,31 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         joint_vel = robot.data.default_joint_vel.clone()
         robot.write_joint_state_to_sim(joint_position, joint_vel)
 
-    # HEADLESS INPUT: replace teleop with scripted motion
-    # Small sinusoidal trajectory for demo
-    step = 0
+    # Determine control mode: GUI or Headless
+    if not args_cli.headless:
+        # GUI mode: use keyboard teleop
+        teleop = Se3Keyboard(Se3KeyboardCfg(pos_sensitivity=0.05, rot_sensitivity=0.05))
+        teleop.reset()
+        print("[INFO] Teleoperation active — use WASDQE to move and arrow keys to rotate.")
+    else:
+        # Headless: use scripted motion
+        step = 0
+        print("[INFO] Running headless simulation with scripted motion...")
+
     ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
     goal_pose = ee_pose_w.clone()
 
-    print("[INFO] Running headless simulation with scripted motion...")
-
     while simulation_app.is_running():
-        # Headless input: sinusoidal motion in x-axis
-        delta_pos = 0.01 * torch.sin(torch.tensor(step * 0.1))
-        goal_pose[:, 0] += delta_pos
-        step += 1
+        if not args_cli.headless:
+            # GUI teleoperation
+            action = teleop.advance()
+            goal_pose[:, 0:3] += action[:, 0:3]
+            # Orientation handled internally
+        else:
+            # Headless scripted motion
+            delta_pos = 0.01 * torch.sin(torch.tensor(step * 0.1))
+            goal_pose[:, 0] += delta_pos
+            step += 1
 
         # Feed IK
         diff_ik_controller.set_command(goal_pose)
