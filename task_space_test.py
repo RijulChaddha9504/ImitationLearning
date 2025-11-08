@@ -28,8 +28,7 @@ from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
 
 # ✅ Import keyboard teleoperation only if GUI mode
 if not args_cli.headless:
-    from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
-
+    from isaaclab.devices import Se3Keyboard
 
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
@@ -101,7 +100,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Determine control mode: GUI or Headless
     if not args_cli.headless:
         # GUI mode: use keyboard teleop
-        teleop = Se3Keyboard(Se3KeyboardCfg(pos_sensitivity=0.05, rot_sensitivity=0.05))
+        teleop = Se3Keyboard(pos_sensitivity=0.05, rot_sensitivity=0.05)
         teleop.reset()
         print("[INFO] Teleoperation active — use WASDQE to move and arrow keys to rotate.")
     else:
