@@ -114,9 +114,13 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     while simulation_app.is_running():
         if not args_cli.headless:
             # GUI teleoperation
-            pos_delta, rot_delta = teleop.advance()  # unpack tuple
-            # Convert to tensor for IK
-            goal_pose[:, 0:3] += torch.tensor(pos_delta, device=goal_pose.device).unsqueeze(0)
+            pos_delta, rot_delta = teleop.advance()
+            # pos_delta is 6D: translation + rotation twist
+            trans_delta = pos_delta[:3]        # only the first 3 modify XYZ position
+
+            # update position
+            goal_pose[:, 0:3] += torch.tensor(trans_delta, device=goal_pose.device).unsqueeze(0)
+
             # Orientation update can be applied if needed
             # goal_pose[:, 3:7] += ...  (quaternion handling, if needed)
         else:
