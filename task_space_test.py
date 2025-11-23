@@ -277,7 +277,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 def main():
     sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
-    sim = sim_utils.SimuMlationContext(sim_cfg)
+    sim = sim_utils.SimulationContext(sim_cfg)
 
     sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
     scene_cfg = TableTopSceneCfg(num_envs=1, env_spacing=2.0)
