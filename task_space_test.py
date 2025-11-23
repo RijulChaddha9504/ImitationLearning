@@ -187,7 +187,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             # ---------- use UI gripper state ----------
             gripper_open_bool = gripper_state["open"]
             gripper_target_norm = 0.0 if gripper_open_bool else 1.0
-            print(f"[DEBUG] Gripper open bool: {gripper_open_bool}, target norm: {gripper_target_norm}")
+            #print(f"[DEBUG] Gripper open bool: {gripper_open_bool}, target norm: {gripper_target_norm}")
 
         else:
             # Headless scripted motion
@@ -231,7 +231,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     gripper_joint_positions,
                     joint_ids=gripper_joint_ids
                 )
-            print("[DEBUG] Gripper joint positions:", gripper_joint_positions)
+            #print("[DEBUG] Gripper joint positions:", gripper_joint_positions)
 
         # write/update simulation
         scene.write_data_to_sim()
@@ -242,7 +242,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         goal_marker.visualize(goal_pose[:, 0:3] + scene.env_origins, goal_pose[:, 3:7])
-        print("[DEBUG] EE pose:", ee_pose_w[0, :3].cpu().numpy())
+        #print("[DEBUG] EE pose:", ee_pose_w[0, :3].cpu().numpy())
 
 
 def main():
