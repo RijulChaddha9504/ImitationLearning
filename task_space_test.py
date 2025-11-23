@@ -26,9 +26,11 @@ from isaaclab.utils.math import subtract_frame_transforms
 
 from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
 
-# Import Se3Keyboard only if GUI mode (already in your file)
+# Import Se3Keyboard and Omni UI only if GUI mode
 if not args_cli.headless:
     from isaaclab.devices import Se3Keyboard
+    import omni.ui as ui
+
 
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
@@ -52,14 +54,14 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # keep original cube (unchanged)
+    # Original cube
     cube = AssetBaseCfg(
         prim_path="/World/cube",
         spawn=sim_utils.CuboidCfg(size=[0.1, 0.1, 0.1]),
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.5)),
     )
 
-    # Second pickable cube (on the table, graspable)
+    # Second pickable cube
     cube2 = AssetBaseCfg(
         prim_path="/World/cube2",
         spawn=sim_utils.CuboidCfg(
@@ -67,9 +69,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(
-            pos=(0.45, 0.15, 0.02),
-        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.15, 0.02)),
     )
 
     if args_cli.robot == "franka_panda":
@@ -97,15 +97,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         robot_entity_cfg = SceneEntityCfg("robot", joint_names=[".*"], body_names=["ee_link"])
     robot_entity_cfg.resolve(scene)
 
-    # Debug: list all joint names (helpful if you need to change heuristics)
-    # print("ALL JOINT NAMES:", robot.data.joint_names)
-
-    # find ee jacobi index (existing)
     ee_jacobi_idx = robot_entity_cfg.body_ids[0] - 1 if robot.is_fixed_base else robot_entity_cfg.body_ids[0]
 
     sim_dt = sim.get_physics_dt()
 
-    # Initialize joint states (existing)
+    # Initialize joint states
     if args_cli.robot == "franka_panda":
         joint_position = robot.data.default_joint_pos.clone()
         joint_vel = robot.data.default_joint_vel.clone()
@@ -118,28 +114,20 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # -----------------------
     # GRIPPER SETUP
     # -----------------------
-    # find gripper joint indices by name heuristics
-    joint_names = [n.lower() for n in robot.data.joint_names]  # list of joint name strings
-    gripper_candidates = []
-    for i, n in enumerate(joint_names):
-        if ("finger" in n) or ("gripper" in n) or ("hand" in n) or ("claw" in n) or ("panda_finger" in n):
-            gripper_candidates.append(i)
-
+    joint_names = [n.lower() for n in robot.data.joint_names]
+    gripper_candidates = [i for i, n in enumerate(joint_names) if any(k in n for k in ["finger", "gripper", "hand", "claw", "panda_finger"])]
     gripper_joint_ids = gripper_candidates
+
     if len(gripper_joint_ids) > 0:
         print("[INFO] Detected gripper joints:", [robot.data.joint_names[i] for i in gripper_joint_ids])
     else:
         print("[WARN] No gripper joints detected. Gripper control will be disabled.")
 
-    # mapping from normalized target [0..1] to actual joint positions (tune as needed)
     gripper_open_pos = 0.04
     gripper_closed_pos = 0.0
-
-    # normalized in [0..1], 0=open, 1=closed
     gripper_target_norm = 0.0
-    gripper_open_bool = True  # explicit state
+    gripper_open_bool = True
 
-    # helper to convert normalized target to per-joint tensor
     def gripper_norm_to_joint_positions(norm):
         pos = gripper_open_pos + (gripper_closed_pos - gripper_open_pos) * norm
         if len(gripper_joint_ids) == 0:
@@ -150,14 +138,28 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # TELEOP / HEADLESS SETUP
     # -----------------------
     if not args_cli.headless:
-        # GUI mode: use keyboard teleop
         teleop = Se3Keyboard(pos_sensitivity=0.05, rot_sensitivity=0.05)
         teleop.reset()
         print("[INFO] Teleoperation active — use WASDQE to move and arrow keys to rotate.")
         print("[INFO] Press 'T' (once) to toggle gripper open/close in GUI mode.")
         teleop_has_extra_keys = False
+
+        # ---------- Omni UI gripper button ----------
+        gripper_state = {"open": True}
+
+        def _toggle_gripper_cb():
+            gripper_state["open"] = not gripper_state["open"]
+            print(f"[UI] Gripper toggled -> {'OPEN' if gripper_state['open'] else 'CLOSED'}")
+
+        def _build_gripper_ui():
+            with ui.Window("Gripper", width=180, height=80):
+                ui.Spacer(height=6)
+                ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb)
+                ui.Spacer(height=4)
+
+        _build_gripper_ui()
+
     else:
-        # Headless: use scripted motion and scripted gripper sequence
         step = 0
         headless_cycle_t = 0
         print("[INFO] Running headless simulation with scripted motion + gripper sequence...")
@@ -165,53 +167,26 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
     goal_pose = ee_pose_w.clone()
 
-    # helper state for gripper toggle (GUI)
-    prev_t_pressed = False
-
     while simulation_app.is_running():
         if not args_cli.headless:
-            # GUI teleoperation
-            # Some Se3Keyboard implementations return (pos_delta, rot_delta, extra_keys)
-            # and some return just (pos_delta, rot_delta). We handle both cases.
+            # GUI teleop
             try:
                 ret = teleop.advance()
-                # When teleop.advance() returns 3 items, the 3rd is assumed to be a dict
                 if isinstance(ret, tuple) and len(ret) == 3:
                     pos_delta, rot_delta, extra_keys = ret
                     teleop_has_extra_keys = True
                 else:
                     pos_delta, rot_delta = ret
-                    extra_keys = {}
             except TypeError:
-                # unexpected return shape: try the two-output call
                 pos_delta, rot_delta = teleop.advance()
-                extra_keys = {}
 
-            # movement
-            trans_delta = pos_delta[:3]
-            goal_pose[:, 0:3] += torch.tensor(trans_delta, device=goal_pose.device).unsqueeze(0)
+            # move EE
+            goal_pose[:, 0:3] += torch.tensor(pos_delta[:3], device=goal_pose.device).unsqueeze(0)
 
-            # gripper toggle: check extra_keys (case when Se3Keyboard provides key map)
-            # Gripper toggle detection
-            t_pressed = False
-
-            # 1️⃣ Use get_key() if available (most IsaacLab versions support this)
-            if hasattr(teleop, "get_key"):
-                t_pressed = teleop.get_key("T") or teleop.get_key("t")
-            # 2️⃣ Fallback: check extra_keys dict (older versions)
-            elif isinstance(extra_keys, dict):
-                t_pressed = bool(extra_keys.get("T", False) or extra_keys.get("t", False))
-
-            print(f"T Pressed: {t_pressed}")
-
-
-            # Edge-detect the key press for toggle behavior
-            if t_pressed and not prev_t_pressed:
-                gripper_open_bool = not gripper_open_bool
-                gripper_target_norm = 0.0 if gripper_open_bool else 1.0
-                print(f"[INFO] Gripper toggled -> {'OPEN' if gripper_open_bool else 'CLOSED'}")
-
-            prev_t_pressed = t_pressed
+            # ---------- use UI gripper state ----------
+            gripper_open_bool = gripper_state["open"]
+            gripper_target_norm = 0.0 if gripper_open_bool else 1.0
+            print(f"[DEBUG] Gripper open bool: {gripper_open_bool}, target norm: {gripper_target_norm}")
 
         else:
             # Headless scripted motion
@@ -219,15 +194,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             goal_pose[:, 0] += delta_pos
             step += 1
 
-            # simple gripper sequence: open for half cycle, close for half cycle
             headless_cycle_t += 1
             cycle_len = 200
             tmod = headless_cycle_t % cycle_len
             if tmod < (cycle_len // 2):
-                gripper_target_norm = 0.0  # open
+                gripper_target_norm = 0.0
                 gripper_open_bool = True
             else:
-                gripper_target_norm = 1.0  # closed
+                gripper_target_norm = 1.0
                 gripper_open_bool = False
 
         # Feed IK
@@ -245,34 +219,29 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
 
-        # set arm joint targets (existing)
+        # set arm joint targets
         robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
 
-        # -----------------------
         # Apply gripper joint targets
-        # -----------------------
         if len(gripper_joint_ids) > 0:
-            # If headless loop set gripper_target_norm already; otherwise sync from gripper_open_bool
-            if not args_cli.headless:
-                # GUI: sync numeric norm from boolean state
-                gripper_target_norm = 0.0 if gripper_open_bool else 1.0
-
             gripper_joint_positions = gripper_norm_to_joint_positions(gripper_target_norm)
             if gripper_joint_positions is not None:
-                # robot.set_joint_position_target expects shape (1, num_gripper_joints)
                 robot.set_joint_position_target(
                     gripper_joint_positions,
                     joint_ids=gripper_joint_ids
                 )
-            print("Gripper targets:", gripper_joint_positions)
+            print("[DEBUG] Gripper joint positions:", gripper_joint_positions)
 
+        # write/update simulation
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim_dt)
 
+        # visualize EE & goal
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         goal_marker.visualize(goal_pose[:, 0:3] + scene.env_origins, goal_pose[:, 3:7])
+        print("[DEBUG] EE pose:", ee_pose_w[0, :3].cpu().numpy())
 
 
 def main():
