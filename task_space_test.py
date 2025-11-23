@@ -145,19 +145,20 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         teleop_has_extra_keys = False
 
         # ---------- Omni UI gripper button ----------
+        # ---------- Omni UI gripper button (fixed) ----------
         gripper_state = {"open": True}
 
         def _toggle_gripper_cb():
             gripper_state["open"] = not gripper_state["open"]
             print(f"[UI] Gripper toggled -> {'OPEN' if gripper_state['open'] else 'CLOSED'}")
 
-        def _build_gripper_ui():
-            with ui.Window("Gripper", width=180, height=80):
-                ui.Spacer(height=6)
-                ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb)
-                ui.Spacer(height=4)
+        # Create a Window object, then populate its frame (correct usage)
+        gripper_window = ui.Window("Gripper", width=180, height=80)
+        with gripper_window.frame:
+            ui.Spacer(height=6)
+            ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb)
+            ui.Spacer(height=4)
 
-        _build_gripper_ui()
 
     else:
         step = 0
