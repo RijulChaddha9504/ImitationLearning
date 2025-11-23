@@ -196,6 +196,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             if isinstance(extra_keys, dict):
                 # Accept uppercase or lowercase 'T'
                 t_pressed = bool(extra_keys.get("T", False) or extra_keys.get("t", False))
+                print(f"T Pressed: {t_pressed}")
             else:
                 # Fallback: If teleop has a custom API (e.g., teleop.get_button), try to call it
                 if hasattr(teleop, "get_button"):
@@ -263,6 +264,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     gripper_joint_positions,
                     joint_ids=gripper_joint_ids
                 )
+            print("Gripper targets:", gripper_joint_positions)
 
         scene.write_data_to_sim()
         sim.step()
