@@ -192,18 +192,18 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             goal_pose[:, 0:3] += torch.tensor(trans_delta, device=goal_pose.device).unsqueeze(0)
 
             # gripper toggle: check extra_keys (case when Se3Keyboard provides key map)
+            # Gripper toggle detection
             t_pressed = False
-            if isinstance(extra_keys, dict):
-                # Accept uppercase or lowercase 'T'
+
+            # 1️⃣ Use get_key() if available (most IsaacLab versions support this)
+            if hasattr(teleop, "get_key"):
+                t_pressed = teleop.get_key("T") or teleop.get_key("t")
+            # 2️⃣ Fallback: check extra_keys dict (older versions)
+            elif isinstance(extra_keys, dict):
                 t_pressed = bool(extra_keys.get("T", False) or extra_keys.get("t", False))
-                print(f"T Pressed: {t_pressed}")
-            else:
-                # Fallback: If teleop has a custom API (e.g., teleop.get_button), try to call it
-                if hasattr(teleop, "get_button"):
-                    try:
-                        t_pressed = bool(teleop.get_button("T") or teleop.get_button("t"))
-                    except Exception:
-                        t_pressed = False
+
+            print(f"T Pressed: {t_pressed}")
+
 
             # Edge-detect the key press for toggle behavior
             if t_pressed and not prev_t_pressed:
@@ -277,7 +277,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
 def main():
     sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
-    sim = sim_utils.SimulationContext(sim_cfg)
+    sim = sim_utils.SimuMlationContext(sim_cfg)
 
     sim.set_camera_view([2.5, 2.5, 2.5], [0.0, 0.0, 0.0])
     scene_cfg = TableTopSceneCfg(num_envs=1, env_spacing=2.0)
