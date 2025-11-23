@@ -155,9 +155,9 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # Create a Window object, then populate its frame (correct usage)
         gripper_window = ui.Window("Gripper", width=180, height=80)
         with gripper_window.frame:
-            ui.Spacer(height=6)
-            ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb)
-            ui.Spacer(height=4)
+            with ui.VStack(spacing=10):
+                ui.Label("Gripper Control")
+                ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb, height=40)
 
 
     else:
