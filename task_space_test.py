@@ -66,10 +66,14 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         prim_path="/World/cube2",
         spawn=sim_utils.CuboidCfg(
             size=[0.05, 0.05, 0.05],
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=False,
+                max_depenetration_velocity=1.0,
+            ),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.15, 0.02)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.15, 0.10)),
     )
 
     if args_cli.robot == "franka_panda":
