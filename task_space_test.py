@@ -68,7 +68,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 diffuse_color=(0.8, 0.6, 0.4),  # Wood-like color
             ),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.0)),  # Base at ground level (z=0)
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.6, 0.4, 0.0)),  # Moved away from origin, base at ground
     )
 
     # Original cube
@@ -93,7 +93,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 diffuse_color=(0.2, 0.6, 0.9),  # Blue color for visibility
             ),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.33)),  # On top of table (0.0 + 0.3 + 0.03)
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.6, 0.4, 0.33)),  # On top of table, matching table position
     )
 
     if args_cli.robot == "franka_panda":
@@ -106,6 +106,10 @@ class TableTopSceneCfg(InteractiveSceneCfg):
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot = scene["robot"]
+    
+    # Enable collisions for gripper to allow grasping
+    # This ensures the gripper fingers can interact with objects
+    print("[INFO] Enabling gripper collisions for object interaction...")
 
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
     diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
