@@ -54,6 +54,23 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
     )
 
+    # Elevated platform/table for the pickable cube
+    cube_table = AssetBaseCfg(
+        prim_path="/World/CubeTable",
+        spawn=sim_utils.CuboidCfg(
+            size=[0.4, 0.4, 0.6],  # 40cm x 40cm surface, 60cm tall
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=True,
+                kinematic_enabled=True,
+            ),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.8, 0.6, 0.4),  # Wood-like color
+            ),
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.3)),  # Positioned for easy reach
+    )
+
     # Original cube
     cube = AssetBaseCfg(
         prim_path="/World/cube",
@@ -61,7 +78,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.5)),
     )
 
-    # Second pickable cube
+    # Second pickable cube - now on elevated table
     cube2 = AssetBaseCfg(
         prim_path="/World/cube2",
         spawn=sim_utils.CuboidCfg(
@@ -72,8 +89,11 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
             collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.2, 0.6, 0.9),  # Blue color for visibility
+            ),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.45, 0.15, 0.10)),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.63)),  # On top of cube_table (0.3 + 0.3 + 0.03)
     )
 
     if args_cli.robot == "franka_panda":
@@ -94,12 +114,16 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # SMOOTH APPROACH PARAMETERS
     # -----------------------
     # Proportional gain for smooth convergence (lower = smoother/slower)
-    position_p_gain = 0.2  # Tune between 0.1-0.5
-    rotation_p_gain = 0.2  # Tune between 0.1-0.5
+    position_p_gain = 0.15  # Reduced for stability (tune between 0.1-0.3)
+    rotation_p_gain = 0.1   # Lower for rotation stability
     
     # Distance-based scaling parameters
     slow_zone_threshold = 0.15  # Start slowing down within 15cm
     min_gain = 0.05  # Minimum speed when very close (5% of max speed)
+    
+    # Deadband threshold to stop oscillations when very close
+    position_deadband = 0.001  # Stop moving if error < 1mm
+    rotation_deadband = 0.01   # Stop rotating if quaternion difference < 0.01
 
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
     frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
@@ -223,27 +247,41 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # Get current end-effector position
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         
-        # Calculate error between current smooth target and goal
+        # Calculate position error
         position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
         distance_to_goal = torch.norm(position_error, dim=1, keepdim=True)
         
-        # Distance-based adaptive gain (slows down when close)
-        adaptive_gain = torch.clamp(
-            distance_to_goal / slow_zone_threshold, 
-            min=min_gain, 
-            max=1.0
-        )
+        # Apply deadband to prevent tiny oscillations
+        if distance_to_goal.item() > position_deadband:
+            # Distance-based adaptive gain (slows down when close)
+            adaptive_gain = torch.clamp(
+                distance_to_goal / slow_zone_threshold, 
+                min=min_gain, 
+                max=1.0
+            )
+            
+            # Apply proportional control with adaptive gain
+            smooth_target_pose[:, 0:3] += position_p_gain * adaptive_gain * position_error
         
-        # Apply proportional control with adaptive gain
-        smooth_target_pose[:, 0:3] += position_p_gain * adaptive_gain * position_error
+        # Smooth rotation with quaternion sign handling
+        goal_quat = goal_pose[:, 3:7]
+        current_quat = smooth_target_pose[:, 3:7]
         
-        # Smooth rotation (quaternion) - simple linear interpolation
-        # For more advanced: use SLERP (spherical linear interpolation)
-        rotation_error = goal_pose[:, 3:7] - smooth_target_pose[:, 3:7]
-        smooth_target_pose[:, 3:7] += rotation_p_gain * rotation_error
+        # Handle quaternion sign ambiguity (q and -q represent same rotation)
+        # Choose the shortest path by ensuring dot product is positive
+        dot_product = torch.sum(goal_quat * current_quat, dim=1, keepdim=True)
+        goal_quat_corrected = torch.where(dot_product < 0, -goal_quat, goal_quat)
         
-        # Normalize quaternion to maintain valid rotation
-        smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
+        # Calculate rotation error with corrected quaternion
+        rotation_error = goal_quat_corrected - current_quat
+        rotation_error_magnitude = torch.norm(rotation_error, dim=1, keepdim=True)
+        
+        # Apply deadband for rotation
+        if rotation_error_magnitude.item() > rotation_deadband:
+            smooth_target_pose[:, 3:7] += rotation_p_gain * rotation_error
+            
+            # Normalize quaternion to maintain valid rotation
+            smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
 
         # Feed smoothed target to IK controller
         diff_ik_controller.set_command(smooth_target_pose)
