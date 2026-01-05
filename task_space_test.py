@@ -90,6 +90,17 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
     diff_ik_controller = DifferentialIKController(diff_ik_cfg, num_envs=scene.num_envs, device=sim.device)
 
+    # -----------------------
+    # SMOOTH APPROACH PARAMETERS
+    # -----------------------
+    # Proportional gain for smooth convergence (lower = smoother/slower)
+    position_p_gain = 0.2  # Tune between 0.1-0.5
+    rotation_p_gain = 0.2  # Tune between 0.1-0.5
+    
+    # Distance-based scaling parameters
+    slow_zone_threshold = 0.15  # Start slowing down within 15cm
+    min_gain = 0.05  # Minimum speed when very close (5% of max speed)
+
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
     frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
     ee_marker = VisualizationMarkers(frame_marker_cfg.replace(prim_path="/Visuals/ee_current"))
@@ -145,24 +156,20 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         teleop = Se3Keyboard(pos_sensitivity=0.05, rot_sensitivity=0.05)
         teleop.reset()
         print("[INFO] Teleoperation active — use WASDQE to move and arrow keys to rotate.")
-        print("[INFO] Press 'T' (once) to toggle gripper open/close in GUI mode.")
+        print("[INFO] Smooth approach enabled: arm will slow down near goal")
         teleop_has_extra_keys = False
 
-        # ---------- Omni UI gripper button ----------
-        # ---------- Omni UI gripper button (fixed) ----------
         gripper_state = {"open": True}
 
         def _toggle_gripper_cb():
             gripper_state["open"] = not gripper_state["open"]
             print(f"[UI] Gripper toggled -> {'OPEN' if gripper_state['open'] else 'CLOSED'}")
 
-        # Create a Window object, then populate its frame (correct usage)
         gripper_window = ui.Window("Gripper", width=180, height=80)
         with gripper_window.frame:
             with ui.VStack(spacing=10):
                 ui.Label("Gripper Control")
                 ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb, height=40)
-
 
     else:
         step = 0
@@ -171,10 +178,13 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
     goal_pose = ee_pose_w.clone()
+    
+    # Smooth target pose that converges to goal_pose
+    smooth_target_pose = goal_pose.clone()
 
     while simulation_app.is_running():
         if not args_cli.headless:
-            # GUI teleop
+            # GUI teleop - update goal based on user input
             try:
                 ret = teleop.advance()
                 if isinstance(ret, tuple) and len(ret) == 3:
@@ -185,13 +195,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             except TypeError:
                 pos_delta, rot_delta = teleop.advance()
 
-            # move EE
+            # Update goal pose with teleop input
             goal_pose[:, 0:3] += torch.tensor(pos_delta[:3], device=goal_pose.device).unsqueeze(0)
 
-            # ---------- use UI gripper state ----------
             gripper_open_bool = gripper_state["open"]
             gripper_target_norm = 0.0 if gripper_open_bool else 1.0
-            #print(f"[DEBUG] Gripper open bool: {gripper_open_bool}, target norm: {gripper_target_norm}")
 
         else:
             # Headless scripted motion
@@ -209,11 +217,38 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 gripper_target_norm = 1.0
                 gripper_open_bool = False
 
-        # Feed IK
-        diff_ik_controller.set_command(goal_pose)
+        # -----------------------
+        # SMOOTH APPROACH LOGIC
+        # -----------------------
+        # Get current end-effector position
+        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
+        
+        # Calculate error between current smooth target and goal
+        position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
+        distance_to_goal = torch.norm(position_error, dim=1, keepdim=True)
+        
+        # Distance-based adaptive gain (slows down when close)
+        adaptive_gain = torch.clamp(
+            distance_to_goal / slow_zone_threshold, 
+            min=min_gain, 
+            max=1.0
+        )
+        
+        # Apply proportional control with adaptive gain
+        smooth_target_pose[:, 0:3] += position_p_gain * adaptive_gain * position_error
+        
+        # Smooth rotation (quaternion) - simple linear interpolation
+        # For more advanced: use SLERP (spherical linear interpolation)
+        rotation_error = goal_pose[:, 3:7] - smooth_target_pose[:, 3:7]
+        smooth_target_pose[:, 3:7] += rotation_p_gain * rotation_error
+        
+        # Normalize quaternion to maintain valid rotation
+        smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
+
+        # Feed smoothed target to IK controller
+        diff_ik_controller.set_command(smooth_target_pose)
 
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         root_pose_w = robot.data.root_state_w[:, 0:7]
         joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
 
@@ -235,7 +270,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     gripper_joint_positions,
                     joint_ids=gripper_joint_ids
                 )
-            #print("[DEBUG] Gripper joint positions:", gripper_joint_positions)
 
         # write/update simulation
         scene.write_data_to_sim()
@@ -246,7 +280,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         goal_marker.visualize(goal_pose[:, 0:3] + scene.env_origins, goal_pose[:, 3:7])
-        #print("[DEBUG] EE pose:", ee_pose_w[0, :3].cpu().numpy())
 
 
 def main():
