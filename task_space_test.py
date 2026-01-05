@@ -68,7 +68,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 diffuse_color=(0.8, 0.6, 0.4),  # Wood-like color
             ),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.3)),  # Positioned for easy reach
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.0)),  # Base at ground level (z=0)
     )
 
     # Original cube
@@ -93,7 +93,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
                 diffuse_color=(0.2, 0.6, 0.9),  # Blue color for visibility
             ),
         ),
-        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.63)),  # On top of cube_table (0.3 + 0.3 + 0.03)
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.3, 0.33)),  # On top of table (0.0 + 0.3 + 0.03)
     )
 
     if args_cli.robot == "franka_panda":
