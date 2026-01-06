@@ -82,7 +82,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     cube2 = AssetBaseCfg(
         prim_path="/World/cube2",
         spawn=sim_utils.CuboidCfg(
-            size=[0.05, 0.05, 0.05],
+            size=[0.03, 0.03, 0.03],
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=1.0,
