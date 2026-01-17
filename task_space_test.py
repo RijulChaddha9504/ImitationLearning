@@ -37,6 +37,11 @@ if not args_cli.headless:
 
 # Add recording functionality
 class DemonstrationRecorder:
+    """
+    Records robot demonstrations and supports multiple recording sessions.
+    Episodes from previous sessions are preserved when saving new ones.
+    """
+    
     def __init__(self, save_path="demonstrations.hdf5"):
         self.save_path = Path(save_path)
         self.episodes = []
@@ -47,8 +52,23 @@ class DemonstrationRecorder:
             'joint_positions': []
         }
         self.recording = False
+        
+        # Load existing episodes if file exists
+        if self.save_path.exists():
+            self._load_existing_episodes()
+    
+    def _load_existing_episodes(self):
+        """Load episodes from existing file to preserve them"""
+        try:
+            with h5py.File(self.save_path, 'r') as f:
+                num_existing = len(f.keys())
+                print(f"[INFO] Found existing file with {num_existing} episodes")
+                print(f"[INFO] New episodes will be appended (starting from episode_{num_existing})")
+        except Exception as e:
+            print(f"[WARN] Could not load existing episodes: {e}")
     
     def start_episode(self):
+        """Start recording a new episode"""
         self.recording = True
         self.current_episode = {
             'observations': [],
@@ -56,8 +76,10 @@ class DemonstrationRecorder:
             'ee_poses': [],
             'joint_positions': []
         }
+        print(f"[RECORDING] Started episode (will be episode_{self._get_next_episode_number()})")
     
     def add_transition(self, obs, action, ee_pose, joint_pos):
+        """Add a single transition to the current episode"""
         if self.recording:
             self.current_episode['observations'].append(obs.cpu().numpy())
             self.current_episode['actions'].append(action.cpu().numpy())
@@ -65,19 +87,94 @@ class DemonstrationRecorder:
             self.current_episode['joint_positions'].append(joint_pos.cpu().numpy())
     
     def end_episode(self):
+        """End the current episode and store it"""
         if self.recording and len(self.current_episode['observations']) > 0:
             self.episodes.append(self.current_episode)
-            print(f"Episode {len(self.episodes)} saved with {len(self.current_episode['observations'])} steps")
+            episode_num = self._get_next_episode_number() - 1
+            print(f"[RECORDING] Episode {episode_num} completed with {len(self.current_episode['observations'])} steps")
+        elif self.recording:
+            print("[WARN] Episode ended but no data was recorded")
         self.recording = False
     
+    def _get_next_episode_number(self):
+        """Get the episode number for the next episode to be saved"""
+        existing_count = 0
+        if self.save_path.exists():
+            try:
+                with h5py.File(self.save_path, 'r') as f:
+                    existing_count = len(f.keys())
+            except:
+                pass
+        return existing_count + len(self.episodes)
+    
     def save(self):
-        with h5py.File(self.save_path, 'w') as f:
-            for i, episode in enumerate(self.episodes):
-                grp = f.create_group(f'episode_{i}')
-                for key, value in episode.items():
-                    grp.create_dataset(key, data=np.array(value))
-        print(f"Saved {len(self.episodes)} episodes to {self.save_path}")
-       
+        """
+        Save all episodes to file.
+        If file exists, new episodes are appended to existing ones.
+        """
+        if len(self.episodes) == 0:
+            print("[WARN] No new episodes to save")
+            return
+        
+        all_episodes = []
+        
+        # Load existing episodes if file exists
+        if self.save_path.exists():
+            try:
+                with h5py.File(self.save_path, 'r') as f:
+                    for ep_name in sorted(f.keys(), key=lambda x: int(x.split('_')[1])):
+                        ep_data = {
+                            'observations': np.array(f[ep_name]['observations']),
+                            'actions': np.array(f[ep_name]['actions']),
+                            'ee_poses': np.array(f[ep_name]['ee_poses']),
+                            'joint_positions': np.array(f[ep_name]['joint_positions'])
+                        }
+                        all_episodes.append(ep_data)
+                num_existing = len(all_episodes)
+                print(f"[INFO] Loaded {num_existing} existing episodes")
+            except Exception as e:
+                print(f"[WARN] Could not load existing episodes: {e}")
+                all_episodes = []
+        
+        # Add new episodes
+        all_episodes.extend(self.episodes)
+        
+        # Save all episodes (existing + new)
+        try:
+            with h5py.File(self.save_path, 'w') as f:
+                for i, episode in enumerate(all_episodes):
+                    grp = f.create_group(f'episode_{i}')
+                    for key, value in episode.items():
+                        grp.create_dataset(key, data=np.array(value))
+            
+            total = len(all_episodes)
+            new = len(self.episodes)
+            existing = total - new
+            
+            print(f"[SUCCESS] Saved to {self.save_path.absolute()}")
+            print(f"  Total episodes: {total}")
+            print(f"  Previous: {existing}")
+            print(f"  New this session: {new}")
+            
+            # Clear episodes from memory after successful save
+            self.episodes = []
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to save demonstrations: {e}")
+    
+    def get_stats(self):
+        """Print statistics about recorded demonstrations"""
+        total_existing = 0
+        if self.save_path.exists():
+            with h5py.File(self.save_path, 'r') as f:
+                total_existing = len(f.keys())
+        
+        print(f"\n=== Demonstration Statistics ===")
+        print(f"File: {self.save_path}")
+        print(f"Episodes on disk: {total_existing}")
+        print(f"Episodes in memory (unsaved): {len(self.episodes)}")
+        print(f"Total if saved now: {total_existing + len(self.episodes)}")
+        print(f"================================\n")
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
