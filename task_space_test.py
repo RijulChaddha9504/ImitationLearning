@@ -1,5 +1,8 @@
 import argparse
 from isaaclab.app import AppLauncher
+import h5py
+import numpy as np
+from pathlib import Path
 
 """Robot Arm Teleoperation (headless-compatible) with Task Space IK Control"""
 
@@ -32,6 +35,49 @@ if not args_cli.headless:
     import omni.ui as ui
 
 
+# Add recording functionality
+class DemonstrationRecorder:
+    def __init__(self, save_path="demonstrations.hdf5"):
+        self.save_path = Path(save_path)
+        self.episodes = []
+        self.current_episode = {
+            'observations': [],
+            'actions': [],
+            'ee_poses': [],
+            'joint_positions': []
+        }
+        self.recording = False
+    
+    def start_episode(self):
+        self.recording = True
+        self.current_episode = {
+            'observations': [],
+            'actions': [],
+            'ee_poses': [],
+            'joint_positions': []
+        }
+    
+    def add_transition(self, obs, action, ee_pose, joint_pos):
+        if self.recording:
+            self.current_episode['observations'].append(obs.cpu().numpy())
+            self.current_episode['actions'].append(action.cpu().numpy())
+            self.current_episode['ee_poses'].append(ee_pose.cpu().numpy())
+            self.current_episode['joint_positions'].append(joint_pos.cpu().numpy())
+    
+    def end_episode(self):
+        if self.recording and len(self.current_episode['observations']) > 0:
+            self.episodes.append(self.current_episode)
+            print(f"Episode {len(self.episodes)} saved with {len(self.current_episode['observations'])} steps")
+        self.recording = False
+    
+    def save(self):
+        with h5py.File(self.save_path, 'w') as f:
+            for i, episode in enumerate(self.episodes):
+                grp = f.create_group(f'episode_{i}')
+                for key, value in episode.items():
+                    grp.create_dataset(key, data=np.array(value))
+        print(f"Saved {len(self.episodes)} episodes to {self.save_path}")
+       
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
@@ -108,7 +154,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot = scene["robot"]
     
     # Enable collisions for gripper to allow grasping
-    # This ensures the gripper fingers can interact with objects
     print("[INFO] Enabling gripper collisions for object interaction...")
 
     diff_ik_cfg = DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls")
@@ -117,21 +162,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # -----------------------
     # SMOOTH APPROACH PARAMETERS
     # -----------------------
-    # Exponential smoothing factor (higher = more responsive, lower = smoother)
-    position_smoothing = 0.08  # 0.05-0.15 range (lower = smoother)
-    rotation_smoothing = 0.06  # Lower for extra smooth rotation
-    
-    # Maximum velocity limits (m/s and rad/s)
-    max_linear_velocity = 0.3   # Max 30cm/s
-    max_angular_velocity = 0.5  # Max rotation speed
-    
-    # Distance-based scaling parameters
-    slow_zone_threshold = 0.15  # Start slowing down within 15cm
-    min_speed_ratio = 0.1  # Slow to 10% of max speed when very close
-    
-    # Deadband threshold to stop oscillations when very close
-    position_deadband = 0.002  # Stop moving if error < 2mm
-    rotation_deadband = 0.02   # Stop rotating if quaternion difference < 0.02
+    position_smoothing = 0.08
+    rotation_smoothing = 0.06
+    max_linear_velocity = 0.3
+    max_angular_velocity = 0.5
+    slow_zone_threshold = 0.15
+    min_speed_ratio = 0.1
+    position_deadband = 0.002
+    rotation_deadband = 0.02
 
     frame_marker_cfg = FRAME_MARKER_CFG.copy()
     frame_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
@@ -145,7 +183,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot_entity_cfg.resolve(scene)
 
     ee_jacobi_idx = robot_entity_cfg.body_ids[0] - 1 if robot.is_fixed_base else robot_entity_cfg.body_ids[0]
-
     sim_dt = sim.get_physics_dt()
 
     # Initialize joint states
@@ -181,6 +218,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             return None
         return torch.tensor([[pos] * len(gripper_joint_ids)], device=sim.device)
 
+    # ========================================================================
+    # ADD DEMONSTRATION RECORDER HERE - STEP 1: Initialize recorder
+    # ========================================================================
+    recorder = DemonstrationRecorder("robot_demos.hdf5")
+    print("[INFO] Demonstration recorder initialized")
+
     # -----------------------
     # TELEOP / HEADLESS SETUP
     # -----------------------
@@ -197,11 +240,36 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             gripper_state["open"] = not gripper_state["open"]
             print(f"[UI] Gripper toggled -> {'OPEN' if gripper_state['open'] else 'CLOSED'}")
 
+        # ========================================================================
+        # ADD RECORDING CONTROLS HERE - STEP 2: Add UI buttons for recording
+        # ========================================================================
+        def _start_recording():
+            recorder.start_episode()
+            print("[RECORDING] Started new episode - perform your demonstration")
+
+        def _stop_recording():
+            recorder.end_episode()
+            print("[RECORDING] Stopped episode")
+
+        def _save_demos():
+            recorder.save()
+            print("[RECORDING] All demonstrations saved to file")
+
+        # Create UI windows
         gripper_window = ui.Window("Gripper", width=180, height=80)
         with gripper_window.frame:
             with ui.VStack(spacing=10):
                 ui.Label("Gripper Control")
                 ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb, height=40)
+
+        # Recording control window
+        recording_window = ui.Window("Recording", width=180, height=150, position_x=200)
+        with recording_window.frame:
+            with ui.VStack(spacing=10):
+                ui.Label("Demonstration Recording")
+                ui.Button("Start Recording", clicked_fn=_start_recording, height=40)
+                ui.Button("Stop Recording", clicked_fn=_stop_recording, height=40)
+                ui.Button("Save All Demos", clicked_fn=_save_demos, height=40)
 
     else:
         step = 0
@@ -210,11 +278,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
     goal_pose = ee_pose_w.clone()
-    
-    # Smooth target pose that converges to goal_pose
     smooth_target_pose = goal_pose.clone()
     previous_smooth_pose = smooth_target_pose.clone()
 
+    # Main simulation loop
     while simulation_app.is_running():
         if not args_cli.headless:
             # GUI teleop - update goal based on user input
@@ -251,73 +318,50 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 gripper_open_bool = False
 
         # -----------------------
-        # SMOOTH APPROACH LOGIC (Exponential Moving Average + Velocity Limiting)
+        # SMOOTH APPROACH LOGIC
         # -----------------------
-        # Get current end-effector position
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         
-        # Calculate position error
         position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
         distance_to_goal = torch.norm(position_error, dim=1, keepdim=True)
         
-        # Distance-based speed scaling (slow down when approaching goal)
         speed_scale = torch.clamp(
             distance_to_goal / slow_zone_threshold,
             min=min_speed_ratio,
             max=1.0
         )
         
-        # Apply deadband to prevent tiny oscillations
         if distance_to_goal.item() > position_deadband:
-            # Exponential moving average for smooth position update
             position_delta = position_smoothing * speed_scale * position_error
-            
-            # Limit velocity to prevent jerky motion
             max_position_delta = max_linear_velocity * sim_dt
             position_delta_norm = torch.norm(position_delta)
             if position_delta_norm > max_position_delta:
                 position_delta = position_delta / position_delta_norm * max_position_delta
-            
             smooth_target_pose[:, 0:3] += position_delta
         
-        # Smooth rotation with quaternion sign handling
         goal_quat = goal_pose[:, 3:7]
         current_quat = smooth_target_pose[:, 3:7]
-        
-        # Handle quaternion sign ambiguity (choose shortest path)
         dot_product = torch.sum(goal_quat * current_quat, dim=1, keepdim=True)
         goal_quat_corrected = torch.where(dot_product < 0, -goal_quat, goal_quat)
-        
-        # Calculate rotation error
         rotation_error = goal_quat_corrected - current_quat
         rotation_error_magnitude = torch.norm(rotation_error, dim=1, keepdim=True)
         
-        # Apply deadband for rotation
         if rotation_error_magnitude.item() > rotation_deadband:
-            # Exponential moving average for rotation
             rotation_delta = rotation_smoothing * rotation_error
-            
-            # Limit angular velocity
             max_rotation_delta = max_angular_velocity * sim_dt
             rotation_delta_norm = torch.norm(rotation_delta)
             if rotation_delta_norm > max_rotation_delta:
                 rotation_delta = rotation_delta / rotation_delta_norm * max_rotation_delta
-            
             smooth_target_pose[:, 3:7] += rotation_delta
-            
-            # Normalize quaternion to maintain valid rotation
             smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
         
-        # Additional smoothing: blend with previous pose to reduce jitter
-        alpha = 0.7  # Blend factor (higher = more responsive)
+        alpha = 0.7
         smooth_target_pose = alpha * smooth_target_pose + (1 - alpha) * previous_smooth_pose
         smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
-        
         previous_smooth_pose = smooth_target_pose.clone()
 
-        # Feed smoothed target to IK controller
+        # IK computation
         diff_ik_controller.set_command(smooth_target_pose)
-
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
         root_pose_w = robot.data.root_state_w[:, 0:7]
         joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
@@ -329,7 +373,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
 
-        # set arm joint targets
+        # Set arm joint targets
         robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
 
         # Apply gripper joint targets
@@ -341,16 +385,44 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     joint_ids=gripper_joint_ids
                 )
 
-        # write/update simulation
+        # ========================================================================
+        # RECORD DEMONSTRATION DATA HERE - STEP 3: Record transitions
+        # ========================================================================
+        # Create observation (matching what you'll use for training)
+        joint_pos_full = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
+        joint_vel_full = robot.data.joint_vel[:, robot_entity_cfg.joint_ids]
+        
+        # Observation: [joint_pos(7), joint_vel(7), ee_pose(7), gripper_state(1)]
+        obs = torch.cat([
+            joint_pos_full,
+            joint_vel_full,
+            ee_pose_w,
+            torch.tensor([[gripper_target_norm]], device=sim.device)
+        ], dim=-1)
+        
+        # Action: joint position targets + gripper target
+        action = torch.cat([
+            joint_pos_des,
+            torch.tensor([[gripper_target_norm]], device=sim.device)
+        ], dim=-1)
+        
+        # Record the transition
+        recorder.add_transition(
+            obs=obs,
+            action=action,
+            ee_pose=ee_pose_w,
+            joint_pos=joint_pos_full
+        )
+
+        # Write/update simulation
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim_dt)
 
-        # visualize EE & goal
+        # Visualize EE & goal
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         ee_marker.visualize(ee_pose_w[:, 0:3], ee_pose_w[:, 3:7])
         goal_marker.visualize(goal_pose[:, 0:3] + scene.env_origins, goal_pose[:, 3:7])
-
 
 def main():
     sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
