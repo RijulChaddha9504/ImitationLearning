@@ -4,6 +4,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from isaaclab.utils.math import subtract_frame_transforms, quat_mul, quat_from_euler_xyz
 
 """Robot Arm Teleoperation (headless-compatible) with Task Space IK Control"""
 
@@ -191,7 +192,7 @@ class DemonstrationRecorder:
         unsaved = len(self.episodes)
         status = "✓" if unsaved == 0 else f"⚠ {unsaved} unsaved"
         print(f"[STATS] This session: {len(self.episodes)} episodes {status}")
-        
+
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
@@ -276,10 +277,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # -----------------------
     # SMOOTH APPROACH PARAMETERS
     # -----------------------
-    position_smoothing = 0.08
-    rotation_smoothing = 0.06
-    max_linear_velocity = 0.3
-    max_angular_velocity = 0.5
+    position_smoothing = 0.15
+    rotation_smoothing = 0.12
+    max_linear_velocity = 0.6
+    max_angular_velocity = 1.0
     slow_zone_threshold = 0.15
     min_speed_ratio = 0.1
     position_deadband = 0.002
@@ -394,14 +395,14 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
     ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
     goal_pose = ee_pose_w.clone()
-    smooth_target_pose = goal_pose.clone()
-    previous_smooth_pose = smooth_target_pose.clone()
+    #smooth_target_pose = goal_pose.clone()
+    #previous_smooth_pose = smooth_target_pose.clone()
 
     # Main simulation loop
     while simulation_app.is_running():
         if not args_cli.headless:
             # GUI teleop - update goal based on user input
-            try:
+            '''try:
                 ret = teleop.advance()
                 if isinstance(ret, tuple) and len(ret) == 3:
                     pos_delta, rot_delta, extra_keys = ret
@@ -414,6 +415,33 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             # Update goal pose with teleop input
             goal_pose[:, 0:3] += torch.tensor(pos_delta[:3], device=goal_pose.device).unsqueeze(0)
 
+            gripper_open_bool = gripper_state["open"]
+            gripper_target_norm = 0.0 if gripper_open_bool else 1.0'''
+            try:
+                ret = teleop.advance()
+                if isinstance(ret, tuple) and len(ret) == 3:
+                    pos_delta, rot_delta, extra_keys = ret
+                    teleop_has_extra_keys = True
+                else:
+                    pos_delta, rot_delta = ret
+            except TypeError:
+                pos_delta, rot_delta = teleop.advance()
+
+            # Update goal pose DIRECTLY with teleop input (no smoothing)
+            goal_pose[:, 0:3] += torch.tensor(pos_delta[:3], device=goal_pose.device).unsqueeze(0)
+            
+            # Also update rotation if available
+            if rot_delta is not None:
+                # Apply rotation delta to goal orientation
+                current_quat = goal_pose[:, 3:7]
+                delta_quat = quat_from_euler_xyz(
+                    torch.tensor([rot_delta[0]], device=sim.device),
+                    torch.tensor([rot_delta[1]], device=sim.device),
+                    torch.tensor([rot_delta[2]], device=sim.device)
+                )
+                goal_pose[:, 3:7] = quat_mul(delta_quat, current_quat)
+                goal_pose[:, 3:7] = goal_pose[:, 3:7] / torch.norm(goal_pose[:, 3:7], dim=1, keepdim=True)
+                
             gripper_open_bool = gripper_state["open"]
             gripper_target_norm = 0.0 if gripper_open_bool else 1.0
 
@@ -477,7 +505,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         previous_smooth_pose = smooth_target_pose.clone()
 
         # IK computation
-        diff_ik_controller.set_command(smooth_target_pose)
+        # diff_ik_controller.set_command(smooth_target_pose)
+        diff_ik_controller.set_command(goal_pose)
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
         root_pose_w = robot.data.root_state_w[:, 0:7]
         joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
