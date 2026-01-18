@@ -41,7 +41,6 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-recorder.get_quick_summary()
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
