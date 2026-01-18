@@ -318,7 +318,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # ========================================================================
     # ADD DEMONSTRATION RECORDER HERE - STEP 1: Initialize recorder
     # ========================================================================
-    recorder = DemonstrationRecorder("robot_demos.hdf5")
+    recorder = DemonstrationRecorder("demonstrations")
     print("[INFO] Demonstration recorder initialized")
 
     # -----------------------
