@@ -41,6 +41,157 @@ import h5py
 import numpy as np
 from pathlib import Path
 
+class DemonstrationRecorder:
+    """
+    Records robot demonstrations with timestamped filenames.
+    Each session creates a new file: robot_demos_YYYYMMDD_HHMMSS.hdf5
+    """
+    
+    def __init__(self, save_dir="demonstrations"):
+        # Create save directory if it doesn't exist
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(exist_ok=True, parents=True)
+        
+        # Generate timestamped filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.save_path = self.save_dir / f"robot_demos_{timestamp}.hdf5"
+        
+        self.episodes = []
+        self.current_episode = {
+            'observations': [],
+            'actions': [],
+            'ee_poses': [],
+            'joint_positions': []
+        }
+        self.recording = False
+        
+        print(f"[INFO] This session will save to: {self.save_path}")
+    
+    def start_episode(self):
+        """Start recording a new episode"""
+        self.recording = True
+        self.current_episode = {
+            'observations': [],
+            'actions': [],
+            'ee_poses': [],
+            'joint_positions': []
+        }
+        next_ep_num = len(self.episodes)
+        print(f"[RECORDING] Started episode (will be episode_{next_ep_num})")
+    
+    def add_transition(self, obs, action, ee_pose, joint_pos):
+        """Add a single transition to the current episode"""
+        if self.recording:
+            self.current_episode['observations'].append(obs.cpu().numpy())
+            self.current_episode['actions'].append(action.cpu().numpy())
+            self.current_episode['ee_poses'].append(ee_pose.cpu().numpy())
+            self.current_episode['joint_positions'].append(joint_pos.cpu().numpy())
+    
+    def end_episode(self):
+        """End the current episode and store it"""
+        if self.recording and len(self.current_episode['observations']) > 0:
+            self.episodes.append(self.current_episode)
+            episode_num = len(self.episodes) - 1
+            num_steps = len(self.current_episode['observations'])
+            print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps")
+        elif self.recording:
+            print("[WARN] Episode ended but no data was recorded")
+        self.recording = False
+    
+    def save(self):
+        """Save all episodes from this session to timestamped file"""
+        if len(self.episodes) == 0:
+            print("[WARN] No episodes to save")
+            return
+        
+        try:
+            with h5py.File(self.save_path, 'w') as f:
+                for i, episode in enumerate(self.episodes):
+                    grp = f.create_group(f'episode_{i}')
+                    for key, value in episode.items():
+                        grp.create_dataset(key, data=np.array(value))
+            
+            print(f"[SUCCESS] Saved {len(self.episodes)} episodes to:")
+            print(f"  {self.save_path.absolute()}")
+            
+            # Clear episodes from memory after successful save
+            self.episodes = []
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to save demonstrations: {e}")
+    
+    def get_stats(self, detailed=False):
+        """Print comprehensive statistics about recorded demonstrations."""
+        print("\n" + "="*60)
+        print("DEMONSTRATION STATISTICS")
+        print("="*60)
+        
+        print(f"\n📁 Current Session File:")
+        print(f"   {self.save_path}")
+        
+        if self.save_path.exists():
+            file_size_kb = self.save_path.stat().st_size / 1024
+            print(f"   Size: {file_size_kb:.2f} KB")
+        else:
+            print(f"   Status: Not saved yet")
+        
+        # Episodes in memory
+        episodes_in_memory = [len(ep['observations']) for ep in self.episodes]
+        total_in_memory = len(self.episodes)
+        
+        print(f"\n📊 This Session:")
+        print(f"   Episodes recorded: {total_in_memory}")
+        
+        if episodes_in_memory:
+            total_timesteps = sum(episodes_in_memory)
+            avg_length = np.mean(episodes_in_memory)
+            min_length = min(episodes_in_memory)
+            max_length = max(episodes_in_memory)
+            
+            print(f"\n📈 Episode Statistics:")
+            print(f"   Total timesteps: {total_timesteps:,}")
+            print(f"   Average: {avg_length:.1f} steps")
+            print(f"   Min: {min_length} steps")
+            print(f"   Max: {max_length} steps")
+            
+            if detailed:
+                print(f"\n📋 Per-Episode Breakdown:")
+                for i, steps in enumerate(episodes_in_memory):
+                    status = "✓ Saved" if self.save_path.exists() else "⚠ Unsaved"
+                    print(f"   episode_{i}: {steps} steps - {status}")
+        
+        # Show all files in directory
+        if self.save_dir.exists():
+            all_files = sorted(self.save_dir.glob("robot_demos_*.hdf5"))
+            if all_files:
+                print(f"\n📂 All Sessions in {self.save_dir}:")
+                total_all_episodes = 0
+                for file_path in all_files:
+                    try:
+                        with h5py.File(file_path, 'r') as f:
+                            num_eps = len(f.keys())
+                            total_all_episodes += num_eps
+                            marker = "← Current" if file_path == self.save_path else ""
+                            print(f"   {file_path.name}: {num_eps} episodes {marker}")
+                    except:
+                        print(f"   {file_path.name}: Error reading")
+                print(f"\n   Total episodes across all sessions: {total_all_episodes}")
+        
+        print(f"\n🎯 Training Readiness:")
+        if total_in_memory > 0:
+            print(f"   ⚠ WARNING: {total_in_memory} unsaved episodes!")
+            print(f"   → Click 'Save All Demos' to save them")
+        else:
+            print(f"   ✓ All episodes saved")
+        
+        print("="*60 + "\n")
+    
+    def get_quick_summary(self):
+        """Print a quick one-line summary"""
+        unsaved = len(self.episodes)
+        status = "✓" if unsaved == 0 else f"⚠ {unsaved} unsaved"
+        print(f"[STATS] This session: {len(self.episodes)} episodes {status}")
+        
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
