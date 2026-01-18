@@ -431,17 +431,21 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             goal_pose[:, 0:3] += torch.tensor(pos_delta[:3], device=goal_pose.device).unsqueeze(0)
             
             # Also update rotation if available
-            if rot_delta is not None:
-                # Apply rotation delta to goal orientation
+            # Apply rotation only if rot_delta is a valid vector
+            if isinstance(rot_delta, (list, tuple, np.ndarray)) and len(rot_delta) == 3:
                 current_quat = goal_pose[:, 3:7]
+
                 delta_quat = quat_from_euler_xyz(
                     torch.tensor([rot_delta[0]], device=sim.device),
                     torch.tensor([rot_delta[1]], device=sim.device),
-                    torch.tensor([rot_delta[2]], device=sim.device)
+                    torch.tensor([rot_delta[2]], device=sim.device),
                 )
+
                 goal_pose[:, 3:7] = quat_mul(delta_quat, current_quat)
-                goal_pose[:, 3:7] = goal_pose[:, 3:7] / torch.norm(goal_pose[:, 3:7], dim=1, keepdim=True)
-                
+                goal_pose[:, 3:7] = goal_pose[:, 3:7] / torch.norm(
+                    goal_pose[:, 3:7], dim=1, keepdim=True
+                )
+
             gripper_open_bool = gripper_state["open"]
             gripper_target_norm = 0.0 if gripper_open_bool else 1.0
 
