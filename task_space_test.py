@@ -470,7 +470,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # -----------------------
         ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         
-        position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
+        '''position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
         distance_to_goal = torch.norm(position_error, dim=1, keepdim=True)
         
         speed_scale = torch.clamp(
@@ -506,7 +506,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         alpha = 0.7
         smooth_target_pose = alpha * smooth_target_pose + (1 - alpha) * previous_smooth_pose
         smooth_target_pose[:, 3:7] = smooth_target_pose[:, 3:7] / torch.norm(smooth_target_pose[:, 3:7], dim=1, keepdim=True)
-        previous_smooth_pose = smooth_target_pose.clone()
+        previous_smooth_pose = smooth_target_pose.clone()'''
 
         # IK computation
         # diff_ik_controller.set_command(smooth_target_pose)
