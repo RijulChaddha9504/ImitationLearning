@@ -25,11 +25,26 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.scene import InteractiveScene, InteractiveSceneCfg
+from isaaclab.sensors import Camera, CameraCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms
 
 from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
+
+# Video recording imports
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    print("[WARN] OpenCV not available, video recording will use imageio instead")
+
+try:
+    import imageio
+    IMAGEIO_AVAILABLE = True
+except ImportError:
+    IMAGEIO_AVAILABLE = False
 
 # Import Se3Keyboard and Omni UI only if GUI mode
 if not args_cli.headless:
@@ -46,27 +61,35 @@ class DemonstrationRecorder:
     """
     Records robot demonstrations with timestamped filenames.
     Each session creates a new file: robot_demos_YYYYMMDD_HHMMSS.hdf5
+    Also saves video recordings to the 'recordings' folder.
     """
     
-    def __init__(self, save_dir="demonstrations"):
-        # Create save directory if it doesn't exist
+    def __init__(self, save_dir="demonstrations", recordings_dir="recordings"):
+        # Create save directories if they don't exist
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(exist_ok=True, parents=True)
+        
+        self.recordings_dir = Path(recordings_dir)
+        self.recordings_dir.mkdir(exist_ok=True, parents=True)
         
         # Generate timestamped filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.save_path = self.save_dir / f"robot_demos_{timestamp}.hdf5"
+        self.session_timestamp = timestamp
         
         self.episodes = []
         self.current_episode = {
             'observations': [],
             'actions': [],
             'ee_poses': [],
-            'joint_positions': []
+            'joint_positions': [],
+            'video_frames': []  # NEW: Store video frames
         }
         self.recording = False
+        self.video_fps = 10  # Frames per second for saved videos
         
         print(f"[INFO] This session will save to: {self.save_path}")
+        print(f"[INFO] Video recordings will save to: {self.recordings_dir}")
     
     def start_episode(self):
         """Start recording a new episode"""
@@ -75,26 +98,82 @@ class DemonstrationRecorder:
             'observations': [],
             'actions': [],
             'ee_poses': [],
-            'joint_positions': []
+            'joint_positions': [],
+            'video_frames': []  # NEW: Store video frames
         }
         next_ep_num = len(self.episodes)
         print(f"[RECORDING] Started episode (will be episode_{next_ep_num})")
     
-    def add_transition(self, obs, action, ee_pose, joint_pos):
+    def add_transition(self, obs, action, ee_pose, joint_pos, video_frame=None):
         """Add a single transition to the current episode"""
         if self.recording:
             self.current_episode['observations'].append(obs.cpu().numpy())
             self.current_episode['actions'].append(action.cpu().numpy())
             self.current_episode['ee_poses'].append(ee_pose.cpu().numpy())
             self.current_episode['joint_positions'].append(joint_pos.cpu().numpy())
+            # Store video frame if provided
+            if video_frame is not None:
+                if hasattr(video_frame, 'cpu'):
+                    frame = video_frame.cpu().numpy()
+                else:
+                    frame = np.array(video_frame)
+                self.current_episode['video_frames'].append(frame)
+    
+    def _save_video(self, frames, episode_num):
+        """Save video frames to MP4 file"""
+        if len(frames) == 0:
+            return None
+        
+        # Create unique timestamp for this recording
+        recording_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        video_filename = f"episode_{episode_num}_{recording_timestamp}.mp4"
+        video_path = self.recordings_dir / video_filename
+        
+        try:
+            if CV2_AVAILABLE:
+                # Use OpenCV for video writing
+                height, width = frames[0].shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                out = cv2.VideoWriter(str(video_path), fourcc, self.video_fps, (width, height))
+                for frame in frames:
+                    # Convert RGB to BGR for OpenCV
+                    if len(frame.shape) == 3 and frame.shape[2] == 3:
+                        frame_bgr = cv2.cvtColor(frame.astype(np.uint8), cv2.COLOR_RGB2BGR)
+                    else:
+                        frame_bgr = frame.astype(np.uint8)
+                    out.write(frame_bgr)
+                out.release()
+                print(f"[VIDEO] Saved {len(frames)} frames to {video_path}")
+            elif IMAGEIO_AVAILABLE:
+                # Use imageio for video writing
+                imageio.mimwrite(str(video_path), [f.astype(np.uint8) for f in frames], fps=self.video_fps)
+                print(f"[VIDEO] Saved {len(frames)} frames to {video_path}")
+            else:
+                print("[WARN] No video library available (cv2 or imageio). Video not saved.")
+                return None
+            return str(video_path)
+        except Exception as e:
+            print(f"[ERROR] Failed to save video: {e}")
+            return None
     
     def end_episode(self):
-        """End the current episode and store it"""
+        """End the current episode, save video, and store episode data"""
         if self.recording and len(self.current_episode['observations']) > 0:
-            self.episodes.append(self.current_episode)
-            episode_num = len(self.episodes) - 1
+            episode_num = len(self.episodes)
             num_steps = len(self.current_episode['observations'])
-            print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps")
+            num_frames = len(self.current_episode['video_frames'])
+            
+            # Save video if frames were recorded
+            video_path = None
+            if num_frames > 0:
+                video_path = self._save_video(self.current_episode['video_frames'], episode_num)
+            
+            # Store video path reference and clear frames from memory
+            self.current_episode['video_path'] = video_path if video_path else ""
+            self.current_episode['video_frames'] = []  # Clear frames to save memory
+            
+            self.episodes.append(self.current_episode)
+            print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps, {num_frames} frames")
         elif self.recording:
             print("[WARN] Episode ended but no data was recorded")
         self.recording = False
@@ -110,7 +189,14 @@ class DemonstrationRecorder:
                 for i, episode in enumerate(self.episodes):
                     grp = f.create_group(f'episode_{i}')
                     for key, value in episode.items():
-                        grp.create_dataset(key, data=np.array(value))
+                        # Skip video_frames (already saved as MP4) but keep video_path
+                        if key == 'video_frames':
+                            continue
+                        if key == 'video_path':
+                            # Store video path as string
+                            grp.attrs['video_path'] = value if value else ""
+                        else:
+                            grp.create_dataset(key, data=np.array(value))
             
             print(f"[SUCCESS] Saved {len(self.episodes)} episodes to:")
             print(f"  {self.save_path.absolute()}")
@@ -263,6 +349,26 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         robot = UR10_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
+    
+    # Camera sensor for recording demonstrations
+    camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Camera",
+        update_period=0.1,  # 10 Hz
+        height=480,
+        width=640,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 20.0),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(1.5, 0.0, 1.5),  # Position: behind and above the workspace
+            rot=(0.9239, 0.0, 0.3827, 0.0),  # Looking down at 45 degrees
+            convention="world",
+        ),
+    )
 
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
@@ -336,8 +442,15 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # ========================================================================
     # ADD DEMONSTRATION RECORDER HERE - STEP 1: Initialize recorder
     # ========================================================================
-    recorder = DemonstrationRecorder("demonstrations")
+    recorder = DemonstrationRecorder("demonstrations", "recordings")
     print("[INFO] Demonstration recorder initialized")
+    
+    # Get camera from scene for video recording
+    camera = scene["camera"] if "camera" in scene.keys() else None
+    if camera is not None:
+        print(f"[INFO] Camera sensor available for video recording ({camera.data.image_shape})")
+    else:
+        print("[WARN] No camera sensor found in scene. Video recording disabled.")
 
     # -----------------------
     # TELEOP / HEADLESS SETUP
@@ -556,11 +669,24 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         ], dim=-1)
         
         # Record the transition
+        # Capture camera frame if camera is available
+        video_frame = None
+        if camera is not None:
+            try:
+                # Get RGB image from camera
+                rgb_data = camera.data.output["rgb"]
+                if rgb_data is not None and len(rgb_data) > 0:
+                    # Take first environment's camera data, remove batch dim if present
+                    video_frame = rgb_data[0] if rgb_data.dim() > 3 else rgb_data
+            except Exception as e:
+                pass  # Silently skip if camera frame not available this step
+        
         recorder.add_transition(
             obs=obs,
             action=action,
             ee_pose=ee_pose_w,
-            joint_pos=joint_pos_full
+            joint_pos=joint_pos_full,
+            video_frame=video_frame
         )
 
         # Write/update simulation
