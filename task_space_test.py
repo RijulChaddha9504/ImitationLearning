@@ -10,6 +10,8 @@ from isaaclab.utils.math import subtract_frame_transforms, quat_mul, quat_from_e
 
 parser = argparse.ArgumentParser(description="Robot Arm Teleoperation with Task Space IK Control")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
+# Enable cameras by default to ensure rendering works for the sensor
+parser.add_argument("--enable_cameras", action="store_true", default=True, help="Enable camera rendering.")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -448,7 +450,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # Get camera from scene for video recording
     camera = scene["camera"] if "camera" in scene.keys() else None
     if camera is not None:
-        print(f"[INFO] Camera sensor available for video recording ({camera.data.image_shape})")
+        print(f"[INFO] Camera sensor found in scene")
+        # Don't access camera.data here as it might not be initialized yet
     else:
         print("[WARN] No camera sensor found in scene. Video recording disabled.")
 
