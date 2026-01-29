@@ -10,10 +10,13 @@ from isaaclab.utils.math import subtract_frame_transforms, quat_mul, quat_from_e
 
 parser = argparse.ArgumentParser(description="Robot Arm Teleoperation with Task Space IK Control")
 parser.add_argument("--robot", type=str, default="franka_panda", help="Name of the robot.")
-# Enable cameras by default to ensure rendering works for the sensor
-parser.add_argument("--enable_cameras", action="store_true", default=True, help="Enable camera rendering.")
+# AppLauncher adds --enable_cameras, so we don't need to add it manually here
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+
+# Force enable cameras if not set, as they are required for sensors
+if not args_cli.enable_cameras:
+    args_cli.enable_cameras = True
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
