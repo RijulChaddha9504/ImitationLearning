@@ -35,6 +35,22 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms
 
+# Monkey-patch warp.types.array to fix Isaac Sim compatibility issue
+# The installed version of warp doesn't accept 'owner' arg, but Isaac Sim passes it
+try:
+    import warp as wp
+    if hasattr(wp.types, 'array'):
+        _original_warp_array = wp.types.array
+        def _patched_warp_array(*args, **kwargs):
+            if 'owner' in kwargs:
+                # Remove the incompatible argument
+                del kwargs['owner']
+            return _original_warp_array(*args, **kwargs)
+        wp.types.array = _patched_warp_array
+        print("[INFO] Applied Warp array monkey-patch for compatibility")
+except ImportError:
+    pass
+
 from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
 
 # Video recording imports
