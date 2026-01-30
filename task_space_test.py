@@ -451,6 +451,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     print("[INFO] Demonstration recorder initialized")
     
     # Get camera from scene for video recording
+    print(f"[DEBUG] Scene keys: {list(scene.keys())}")
     camera = scene["camera"] if "camera" in scene.keys() else None
     if camera is not None:
         print(f"[INFO] Camera sensor found in scene")
@@ -685,7 +686,10 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                     # Take first environment's camera data, remove batch dim if present
                     video_frame = rgb_data[0] if rgb_data.dim() > 3 else rgb_data
             except Exception as e:
-                pass  # Silently skip if camera frame not available this step
+                # Print error once to help debug
+                if not hasattr(camera, '_error_printed'):
+                    print(f"[WARN] Camera frame capture error: {e}")
+                    camera._error_printed = True
         
         recorder.add_transition(
             obs=obs,
