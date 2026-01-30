@@ -386,7 +386,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         offset=CameraCfg.OffsetCfg(
             pos=(1.5, 0.0, 1.5),  # Position: behind and above the workspace
-            rot=(0.9239, 0.0, 0.3827, 0.0),  # Looking down at 45 degrees
+            rot=(0.9659, 0.0, 0.2588, 0.0),  # Looking down at 30 degrees
             convention="world",
         ),
     )
@@ -400,7 +400,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         init_state=AssetBaseCfg.InitialStateCfg(
             pos=(1.5, 0.0, 1.5),  # MATCHES CAMERA POSITION
-            rot=(0.9239, 0.0, 0.3827, 0.0),  # MATCHES CAMERA ROTATION
+            rot=(0.9659, 0.0, 0.2588, 0.0),  # MATCHES CAMERA ROTATION
         ),
     )
 
