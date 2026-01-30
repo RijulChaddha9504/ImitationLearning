@@ -680,15 +680,33 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         video_frame = None
         if camera is not None:
             try:
-                # Get RGB image from camera
+                # Get RGB image from camera - IsaacLab returns warp arrays
                 rgb_data = camera.data.output["rgb"]
-                if rgb_data is not None and len(rgb_data) > 0:
-                    # Take first environment's camera data, remove batch dim if present
-                    video_frame = rgb_data[0] if rgb_data.dim() > 3 else rgb_data
+                if rgb_data is not None:
+                    # Handle different tensor formats
+                    if hasattr(rgb_data, 'shape') and len(rgb_data.shape) >= 3:
+                        # Get first environment's data if batched
+                        frame_data = rgb_data[0] if len(rgb_data.shape) == 4 else rgb_data
+                        # Convert to numpy - handle torch tensors and warp arrays
+                        if hasattr(frame_data, 'cpu'):
+                            # PyTorch tensor
+                            video_frame = frame_data.clone().cpu().numpy()
+                        elif hasattr(frame_data, 'numpy'):
+                            # Has numpy method
+                            video_frame = frame_data.numpy().copy()
+                        else:
+                            # Try direct numpy array conversion
+                            import numpy as np
+                            video_frame = np.asarray(frame_data).copy()
+                        # Ensure uint8 format for video
+                        if video_frame.dtype != np.uint8:
+                            video_frame = (video_frame * 255).astype(np.uint8) if video_frame.max() <= 1.0 else video_frame.astype(np.uint8)
             except Exception as e:
                 # Print error once to help debug
                 if not hasattr(camera, '_error_printed'):
                     print(f"[WARN] Camera frame capture error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     camera._error_printed = True
         
         recorder.add_transition(
