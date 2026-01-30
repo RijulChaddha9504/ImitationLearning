@@ -391,6 +391,19 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
     )
 
+    # Visual marker for camera (so you can see where it is)
+    camera_marker = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/CameraMarker",
+        spawn=sim_utils.CuboidCfg(
+            size=[0.1, 0.1, 0.2],  # Small box representing camera
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),  # Red color
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(1.5, 0.0, 1.5),  # MATCHES CAMERA POSITION
+            rot=(0.9239, 0.0, 0.3827, 0.0),  # MATCHES CAMERA ROTATION
+        ),
+    )
+
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     robot = scene["robot"]
