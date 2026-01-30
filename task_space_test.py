@@ -104,7 +104,7 @@ class DemonstrationRecorder:
             'actions': [],
             'ee_poses': [],
             'joint_positions': [],
-            'video_frames': []  # NEW: Store video frames
+            'video_frames': {}  # CHANGED: Dictionary of lists {cam_name: [frames]}
         }
         self.recording = False
         self.video_fps = 10  # Frames per second for saved videos
@@ -120,34 +120,55 @@ class DemonstrationRecorder:
             'actions': [],
             'ee_poses': [],
             'joint_positions': [],
-            'video_frames': []  # NEW: Store video frames
+            'video_frames': {}  # CHANGED: Dictionary of lists
         }
         next_ep_num = len(self.episodes)
         print(f"[RECORDING] Started episode (will be episode_{next_ep_num})")
     
-    def add_transition(self, obs, action, ee_pose, joint_pos, video_frame=None):
-        """Add a single transition to the current episode"""
+    def add_transition(self, obs, action, ee_pose, joint_pos, video_frames_dict=None):
+        """Add a single transition to the current episode
+        
+        Args:
+            video_frames_dict: Dictionary mapping camera names to frame data
+        """
         if self.recording:
             self.current_episode['observations'].append(obs.cpu().numpy())
             self.current_episode['actions'].append(action.cpu().numpy())
             self.current_episode['ee_poses'].append(ee_pose.cpu().numpy())
             self.current_episode['joint_positions'].append(joint_pos.cpu().numpy())
-            # Store video frame if provided
-            if video_frame is not None:
-                if hasattr(video_frame, 'cpu'):
-                    frame = video_frame.cpu().numpy()
-                else:
-                    frame = np.array(video_frame)
-                self.current_episode['video_frames'].append(frame)
+            
+            # Store video frames if provided
+            if video_frames_dict is not None and isinstance(video_frames_dict, dict):
+                for cam_name, frame_data in video_frames_dict.items():
+                    if cam_name not in self.current_episode['video_frames']:
+                        self.current_episode['video_frames'][cam_name] = []
+                    
+                    # Handle frame data conversion if needed (though simulation loop usually handles this now)
+                    if hasattr(frame_data, 'cpu'):
+                        frame = frame_data.cpu().numpy()
+                    elif hasattr(frame_data, 'numpy'):
+                        frame = frame_data.numpy()
+                    elif isinstance(frame_data, list):
+                        frame = np.array(frame_data)
+                    else:
+                        frame = frame_data
+                        
+                    self.current_episode['video_frames'][cam_name].append(frame)
     
-    def _save_video(self, frames, episode_num):
+    def _save_video(self, frames, episode_num, cam_suffix=""):
         """Save video frames to MP4 file"""
         if len(frames) == 0:
             return None
         
         # Create unique timestamp for this recording
         recording_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        video_filename = f"episode_{episode_num}_{recording_timestamp}.mp4"
+        
+        # Add camera suffix if provided
+        name_part = f"episode_{episode_num}"
+        if cam_suffix:
+            name_part += f"_{cam_suffix}"
+            
+        video_filename = f"{name_part}_{recording_timestamp}.mp4"
         video_path = self.recordings_dir / video_filename
         
         try:
@@ -182,19 +203,24 @@ class DemonstrationRecorder:
         if self.recording and len(self.current_episode['observations']) > 0:
             episode_num = len(self.episodes)
             num_steps = len(self.current_episode['observations'])
-            num_frames = len(self.current_episode['video_frames'])
             
-            # Save video if frames were recorded
-            video_path = None
-            if num_frames > 0:
-                video_path = self._save_video(self.current_episode['video_frames'], episode_num)
+            # Save videos for all cameras
+            video_paths = {}
+            total_frames = 0
+            
+            for cam_name, frames in self.current_episode['video_frames'].items():
+                if len(frames) > 0:
+                    path = self._save_video(frames, episode_num, cam_suffix=cam_name)
+                    if path:
+                        video_paths[cam_name] = path
+                        total_frames += len(frames)
             
             # Store video path reference and clear frames from memory
-            self.current_episode['video_path'] = video_path if video_path else ""
-            self.current_episode['video_frames'] = []  # Clear frames to save memory
+            self.current_episode['video_paths'] = video_paths
+            self.current_episode['video_frames'] = {}  # Clear frames to save memory
             
             self.episodes.append(self.current_episode)
-            print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps, {num_frames} frames")
+            print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps. Saved {len(video_paths)} videos.")
         elif self.recording:
             print("[WARN] Episode ended but no data was recorded")
         self.recording = False
@@ -214,8 +240,12 @@ class DemonstrationRecorder:
                         if key == 'video_frames':
                             continue
                         if key == 'video_path':
-                            # Store video path as string
-                            grp.attrs['video_path'] = value if value else ""
+                            # Legacy support or if there's only one video
+                             grp.attrs['video_path'] = value if value else ""
+                        elif key == 'video_paths':
+                            # Store paths for all cameras
+                            for cam_name, path in value.items():
+                                grp.attrs[f'video_path_{cam_name}'] = path
                         else:
                             grp.create_dataset(key, data=np.array(value))
             
@@ -403,6 +433,63 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             rot=(0.9659, 0.0, 0.2588, 0.0),  # MATCHES CAMERA ROTATION
         ),
     )
+
+
+# =============================================================================
+# ADD 10 DEBUG CAMERAS DYNAMICALLY to TableTopSceneCfg
+# =============================================================================
+# This loop adds 10 extra cameras in a circle around the workspace to provide multiple viewpoints
+for i in range(10):
+    angle_deg = i * (360.0 / 10.0)
+    angle_rad = np.deg2rad(angle_deg)
+    
+    # Position: evenly spaced in a circle of radius 1.5m around (0.5, 0.0)
+    pos_x = 0.5 + 1.5 * np.cos(angle_rad)
+    pos_y = 0.0 + 1.5 * np.sin(angle_rad)
+    pos_z = 1.0  # Height
+    
+    # Rotation: Look at center (Yaw=angle+pi), Pitch down 30 deg
+    # Calculate orientation
+    # Note: quat_from_euler_xyz takes (roll, pitch, yaw) in radians
+    # We use torch tensors as required by the helper function
+    try:
+        q = quat_from_euler_xyz(
+            torch.tensor([0.0]),
+            torch.tensor([np.deg2rad(30.0)]),
+            torch.tensor([angle_rad + np.pi])
+        )
+        # Convert tensor to tuple (w, x, y, z)
+        rot_tuple = tuple(q[0].tolist())
+    except Exception as e:
+        print(f"[WARN] Failed to calculate rotation for debug camera {i}: {e}")
+        rot_tuple = (1.0, 0.0, 0.0, 0.0) # Default identity
+    
+    # Create Camera Config
+    cam_cfg = CameraCfg(
+        prim_path=f"{{ENV_REGEX_NS}}/DebugCamera_{i}",
+        update_period=0.1,
+        height=480,
+        width=640,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 20.0),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(pos_x, pos_y, pos_z),
+            rot=rot_tuple,
+            convention="world",
+        ),
+    )
+    
+    # Add config to the class so it gets picked up by InteractiveScene
+    setattr(TableTopSceneCfg, f"debug_camera_{i}", cam_cfg)
+
+    # Optional: Add visual markers for these cameras too?
+    # Keeping it simple for now to avoid cluttering the visual scene too much, 
+    # but the cameras will be recording.
 
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
@@ -705,44 +792,61 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         ], dim=-1)
         
         # Record the transition
-        # Capture camera frame if camera is available
-        video_frame = None
-        if camera is not None:
+        # Record the transition
+        # Capture frames from all cameras
+        video_frames_dict = {}
+        
+        # Helper to capture from a single camera sensor
+        def _get_camera_frame(sensor):
+            if sensor is None: return None
             try:
-                # Get RGB image from camera - IsaacLab returns warp arrays
-                rgb_data = camera.data.output["rgb"]
-                if rgb_data is not None:
-                    # Handle different tensor formats
-                    if hasattr(rgb_data, 'shape') and len(rgb_data.shape) >= 3:
-                        # Get first environment's data if batched
-                        frame_data = rgb_data[0] if len(rgb_data.shape) == 4 else rgb_data
-                        # Convert to numpy - handle torch tensors and warp arrays
-                        if hasattr(frame_data, 'cpu'):
-                            # PyTorch tensor
-                            video_frame = frame_data.clone().cpu().numpy()
-                        elif hasattr(frame_data, 'numpy'):
-                            # Has numpy method
-                            video_frame = frame_data.numpy().copy()
-                        else:
-                            # Try direct numpy array conversion (assuming np is imported)
-                            video_frame = np.asarray(frame_data).copy()
-                        # Ensure uint8 format for video
-                        if video_frame.dtype != np.uint8:
-                            video_frame = (video_frame * 255).astype(np.uint8) if video_frame.max() <= 1.0 else video_frame.astype(np.uint8)
+                rgb_data = sensor.data.output["rgb"]
+                if rgb_data is None: return None
+                
+                # Handle different tensor formats
+                if hasattr(rgb_data, 'shape') and len(rgb_data.shape) >= 3:
+                     # Get first environment if batched
+                     frame_data = rgb_data[0] if len(rgb_data.shape) == 4 else rgb_data
+                     
+                     # Convert to numpy
+                     if hasattr(frame_data, 'cpu'):
+                         v_frame = frame_data.clone().cpu().numpy()
+                     elif hasattr(frame_data, 'numpy'):
+                         v_frame = frame_data.numpy().copy()
+                     else:
+                         v_frame = np.asarray(frame_data).copy()
+                         
+                     # Ensure uint8
+                     if v_frame.dtype != np.uint8:
+                         v_frame = (v_frame * 255).astype(np.uint8) if v_frame.max() <= 1.0 else v_frame.astype(np.uint8)
+                     return v_frame
             except Exception as e:
-                # Print error once to help debug
-                if not hasattr(camera, '_error_printed'):
-                    print(f"[WARN] Camera frame capture error: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    camera._error_printed = True
+                # Use a flag to print error only once per sensor
+                if not hasattr(sensor, '_error_printed'):
+                    print(f"[WARN] Frame capture error for {sensor}: {e}")
+                    sensor._error_printed = True
+            return None
+
+        # Iterate over all likely camera sensors in the scene
+        for key in scene.keys():
+            # Skip markers, look for 'camera' in name (case insensitive)
+            if "camera" in key.lower() and "marker" not in key.lower():
+                try:
+                    sensor = scene[key]
+                    # Duck typing check for data.output
+                    if hasattr(sensor, 'data') and hasattr(sensor.data, 'output'):
+                         frame = _get_camera_frame(sensor)
+                         if frame is not None:
+                             video_frames_dict[key] = frame
+                except:
+                    pass
         
         recorder.add_transition(
             obs=obs,
             action=action,
             ee_pose=ee_pose_w,
             joint_pos=joint_pos_full,
-            video_frame=video_frame
+            video_frames_dict=video_frames_dict
         )
 
         # Write/update simulation
