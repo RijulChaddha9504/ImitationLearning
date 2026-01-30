@@ -695,8 +695,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                             # Has numpy method
                             video_frame = frame_data.numpy().copy()
                         else:
-                            # Try direct numpy array conversion
-                            import numpy as np
+                            # Try direct numpy array conversion (assuming np is imported)
                             video_frame = np.asarray(frame_data).copy()
                         # Ensure uint8 format for video
                         if video_frame.dtype != np.uint8:
