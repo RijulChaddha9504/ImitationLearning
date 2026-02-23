@@ -99,12 +99,14 @@ class DemonstrationRecorder:
         self.session_timestamp = timestamp
         
         self.episodes = []
+        self.episode_counter = 0  # Global counter for this session
         self.current_episode = {
+            'episode_num': 0,
             'observations': [],
             'actions': [],
             'ee_poses': [],
             'joint_positions': [],
-            'video_frames': {}  # CHANGED: Dictionary of lists {cam_name: [frames]}
+            'video_frames': {}  # Dictionary of lists {cam_name: [frames]}
         }
         self.recording = False
         self.video_fps = 10  # Frames per second for saved videos
@@ -116,14 +118,14 @@ class DemonstrationRecorder:
         """Start recording a new episode"""
         self.recording = True
         self.current_episode = {
+            'episode_num': self.episode_counter,
             'observations': [],
             'actions': [],
             'ee_poses': [],
             'joint_positions': [],
-            'video_frames': {}  # CHANGED: Dictionary of lists
+            'video_frames': {}  # Dictionary of lists
         }
-        next_ep_num = len(self.episodes)
-        print(f"[RECORDING] Started episode (will be episode_{next_ep_num})")
+        print(f"[RECORDING] Started episode (will be episode_{self.episode_counter})")
     
     def add_transition(self, obs, action, ee_pose, joint_pos, video_frames_dict=None):
         """Add a single transition to the current episode
@@ -201,7 +203,7 @@ class DemonstrationRecorder:
     def end_episode(self):
         """End the current episode, save video, and store episode data"""
         if self.recording and len(self.current_episode['observations']) > 0:
-            episode_num = len(self.episodes)
+            episode_num = self.current_episode['episode_num']
             num_steps = len(self.current_episode['observations'])
             
             # Save videos for all cameras
@@ -220,6 +222,7 @@ class DemonstrationRecorder:
             self.current_episode['video_frames'] = {}  # Clear frames to save memory
             
             self.episodes.append(self.current_episode)
+            self.episode_counter += 1  # Increment global counter
             print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps. Saved {len(video_paths)} videos.")
         elif self.recording:
             print("[WARN] Episode ended but no data was recorded")
@@ -232,12 +235,15 @@ class DemonstrationRecorder:
             return
         
         try:
-            with h5py.File(self.save_path, 'w') as f:
-                for i, episode in enumerate(self.episodes):
-                    grp = f.create_group(f'episode_{i}')
+            # Open the file in Append mode 'a' so it doesn't overwrite existing episodes
+            with h5py.File(self.save_path, 'a') as f:
+                for episode in self.episodes:
+                    # Get robust episode_num from dict or fallback to iteration count
+                    episode_num = episode.get('episode_num', 0)
+                    grp = f.create_group(f'episode_{episode_num}')
                     for key, value in episode.items():
-                        # Skip video_frames (already saved as MP4) but keep video_path
-                        if key == 'video_frames':
+                        # Skip video_frames (already saved as MP4) and internal metadata
+                        if key in ('video_frames', 'episode_num'):
                             continue
                         if key == 'video_path':
                             # Legacy support or if there's only one video
