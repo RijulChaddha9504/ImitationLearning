@@ -401,7 +401,8 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     else:
         raise ValueError(f"Robot {args_cli.robot} is not supported. Valid: franka_panda, ur10")
     
-    # Camera sensor for recording demonstrations
+    # Main Camera (Camera 1 position - user's preferred angle)
+    # Position: 36 degrees around circle, radius 1.5m from (0.5, 0), height 1.0m
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Camera",
         update_period=0.1,  # 10 Hz
@@ -415,58 +416,15 @@ class TableTopSceneCfg(InteractiveSceneCfg):
             clipping_range=(0.1, 20.0),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(1.5, 0.0, 1.5),  # Position: behind and above the workspace
-            rot=(0.9659, 0.0, 0.2588, 0.0),  # Looking down at 30 degrees
+            pos=(1.71, 0.88, 1.0),  # Camera 1 position (36 deg)
+            rot=(0.8924, -0.09905, 0.2391, 0.3696),  # Looking at center, 30 deg down
             convention="world",
         ),
     )
 
-    # Visual marker for camera (so you can see where it is)
-    camera_marker = AssetBaseCfg(
-        prim_path="{ENV_REGEX_NS}/CameraMarker",
-        spawn=sim_utils.CuboidCfg(
-            size=[0.1, 0.1, 0.2],  # Small box representing camera
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),  # Red color
-        ),
-        init_state=AssetBaseCfg.InitialStateCfg(
-            pos=(1.5, 0.0, 1.5),  # MATCHES CAMERA POSITION
-            rot=(0.9659, 0.0, 0.2588, 0.0),  # MATCHES CAMERA ROTATION
-        ),
-    )
-
-
-# =============================================================================
-# ADD 10 DEBUG CAMERAS DYNAMICALLY to TableTopSceneCfg
-# =============================================================================
-# This loop adds 10 extra cameras in a circle around the workspace to provide multiple viewpoints
-for i in range(10):
-    angle_deg = i * (360.0 / 10.0)
-    angle_rad = np.deg2rad(angle_deg)
-    
-    # Position: evenly spaced in a circle of radius 1.5m around (0.5, 0.0)
-    pos_x = 0.5 + 1.5 * np.cos(angle_rad)
-    pos_y = 0.0 + 1.5 * np.sin(angle_rad)
-    pos_z = 1.0  # Height
-    
-    # Rotation: Look at center (Yaw=angle+pi), Pitch down 30 deg
-    # Calculate orientation
-    # Note: quat_from_euler_xyz takes (roll, pitch, yaw) in radians
-    # We use torch tensors as required by the helper function
-    try:
-        q = quat_from_euler_xyz(
-            torch.tensor([0.0]),
-            torch.tensor([np.deg2rad(30.0)]),
-            torch.tensor([angle_rad + np.pi])
-        )
-        # Convert tensor to tuple (w, x, y, z)
-        rot_tuple = tuple(q[0].tolist())
-    except Exception as e:
-        print(f"[WARN] Failed to calculate rotation for debug camera {i}: {e}")
-        rot_tuple = (1.0, 0.0, 0.0, 0.0) # Default identity
-    
-    # Create Camera Config
-    cam_cfg = CameraCfg(
-        prim_path=f"{{ENV_REGEX_NS}}/DebugCamera_{i}",
+    # Camera 3 (108 degrees - left side view)
+    camera_3 = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Camera_3",
         update_period=0.1,
         height=480,
         width=640,
@@ -478,18 +436,49 @@ for i in range(10):
             clipping_range=(0.1, 20.0),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(pos_x, pos_y, pos_z),
-            rot=rot_tuple,
+            pos=(0.04, 1.43, 1.0),  # Camera 3 position (108 deg)
+            rot=(0.5765, -0.2241, 0.5765, 0.5319),  # Looking at center, 30 deg down
             convention="world",
         ),
     )
-    
-    # Add config to the class so it gets picked up by InteractiveScene
-    setattr(TableTopSceneCfg, f"debug_camera_{i}", cam_cfg)
 
-    # Optional: Add visual markers for these cameras too?
-    # Keeping it simple for now to avoid cluttering the visual scene too much, 
-    # but the cameras will be recording.
+    # Camera 9 (324 degrees - right side view, opposite of Camera 3)
+    camera_9 = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/Camera_9",
+        update_period=0.1,
+        height=480,
+        width=640,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=24.0,
+            focus_distance=400.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 20.0),
+        ),
+        offset=CameraCfg.OffsetCfg(
+            pos=(1.71, -0.88, 1.0),  # Camera 9 position (324 deg)
+            rot=(0.5319, 0.5765, -0.2241, 0.5765),  # Looking at center, 30 deg down
+            convention="world",
+        ),
+    )
+
+    # Visual marker for main camera (so you can see where it is)
+    camera_marker = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/CameraMarker",
+        spawn=sim_utils.CuboidCfg(
+            size=[0.1, 0.1, 0.2],  # Small box representing camera
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),  # Red color
+        ),
+        init_state=AssetBaseCfg.InitialStateCfg(
+            pos=(1.71, 0.88, 1.0),  # MATCHES MAIN CAMERA POSITION
+            rot=(0.8924, -0.09905, 0.2391, 0.3696),  # MATCHES MAIN CAMERA ROTATION
+        ),
+    )
+
+
+
+# Note: Camera 1 (main), Camera 3, and Camera 9 are now defined inside the class above.
+# The dynamic loop has been removed for cleaner configuration.
 
 
 def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
