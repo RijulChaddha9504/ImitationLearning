@@ -99,7 +99,26 @@ class DemonstrationRecorder:
         self.session_timestamp = timestamp
         
         self.episodes = []
-        self.episode_counter = 0  # Global counter for this session
+        
+        # Determine starting episode number by scanning existing recordings
+        self.episode_counter = 0
+        if self.recordings_dir.exists():
+            import re
+            pattern = re.compile(r"episode_(\d+)_")
+            max_ep = -1
+            for file_path in self.recordings_dir.glob("*.mp4"):
+                match = pattern.search(file_path.name)
+                if match:
+                    try:
+                        ep_num = int(match.group(1))
+                        if ep_num > max_ep:
+                            max_ep = ep_num
+                    except ValueError:
+                        pass
+            if max_ep >= 0:
+                self.episode_counter = max_ep + 1
+                print(f"[INFO] Found existing recordings up to episode_{max_ep}. Resuming recording from episode_{self.episode_counter}")
+        
         self.current_episode = {
             'episode_num': 0,
             'observations': [],
