@@ -330,6 +330,18 @@ class DemonstrationRecorder:
         status = "✓" if unsaved == 0 else f"⚠ {unsaved} unsaved"
         print(f"[STATS] This session: {len(self.episodes)} episodes {status}")
 
+def _get_cam_quat(angle_deg):
+    try:
+        angle_rad = np.deg2rad(angle_deg)
+        q = quat_from_euler_xyz(
+            torch.tensor([0.0]),
+            torch.tensor([np.deg2rad(30.0)]),
+            torch.tensor([angle_rad + np.pi])
+        )
+        return tuple(q[0].tolist())
+    except:
+        return (1.0, 0.0, 0.0, 0.0)
+
 @configclass
 class TableTopSceneCfg(InteractiveSceneCfg):
     """Configuration for a simple tabletop scene with a robot."""
@@ -417,7 +429,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         offset=CameraCfg.OffsetCfg(
             pos=(1.71, 0.88, 1.0),  # Camera 1 position (36 deg)
-            rot=(0.8924, -0.09905, 0.2391, 0.3696),  # Looking at center, 30 deg down
+            rot=_get_cam_quat(36.0),
             convention="world",
         ),
     )
@@ -437,7 +449,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         offset=CameraCfg.OffsetCfg(
             pos=(0.04, 1.43, 1.0),  # Camera 3 position (108 deg)
-            rot=(0.5765, -0.2241, 0.5765, 0.5319),  # Looking at center, 30 deg down
+            rot=_get_cam_quat(108.0),
             convention="world",
         ),
     )
@@ -457,7 +469,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         offset=CameraCfg.OffsetCfg(
             pos=(1.71, -0.88, 1.0),  # Camera 9 position (324 deg)
-            rot=(0.5319, 0.5765, -0.2241, 0.5765),  # Looking at center, 30 deg down
+            rot=_get_cam_quat(324.0),
             convention="world",
         ),
     )
@@ -471,7 +483,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         ),
         init_state=AssetBaseCfg.InitialStateCfg(
             pos=(1.71, 0.88, 1.0),  # MATCHES MAIN CAMERA POSITION
-            rot=(0.8924, -0.09905, 0.2391, 0.3696),  # MATCHES MAIN CAMERA ROTATION
+            rot=_get_cam_quat(36.0),
         ),
     )
 
