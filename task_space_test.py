@@ -93,11 +93,6 @@ class DemonstrationRecorder:
         self.recordings_dir = Path(recordings_dir)
         self.recordings_dir.mkdir(exist_ok=True, parents=True)
         
-        # Generate timestamped filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.save_path = self.save_dir / f"robot_demos_{timestamp}.hdf5"
-        self.session_timestamp = timestamp
-        
         self.episodes = []
         
         # Determine starting episode number by scanning existing recordings
@@ -130,8 +125,7 @@ class DemonstrationRecorder:
         self.recording = False
         self.video_fps = 10  # Frames per second for saved videos
         
-        print(f"[INFO] This session will save to: {self.save_path}")
-        print(f"[INFO] Video recordings will save to: {self.recordings_dir}")
+        print(f"[INFO] HDF5 and MP4 files will save per-episode to: {self.save_dir} and {self.recordings_dir}")
     
     def start_episode(self):
         """Start recording a new episode"""
@@ -181,15 +175,12 @@ class DemonstrationRecorder:
         if len(frames) == 0:
             return None
         
-        # Create unique timestamp for this recording
-        recording_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
         # Add camera suffix if provided
         name_part = f"episode_{episode_num}"
         if cam_suffix:
             name_part += f"_{cam_suffix}"
             
-        video_filename = f"{name_part}_{recording_timestamp}.mp4"
+        video_filename = f"{name_part}.mp4"
         video_path = self.recordings_dir / video_filename
         
         try:
@@ -243,39 +234,44 @@ class DemonstrationRecorder:
             self.episodes.append(self.current_episode)
             self.episode_counter += 1  # Increment global counter
             print(f"[RECORDING] Episode {episode_num} completed with {num_steps} steps. Saved {len(video_paths)} videos.")
+            
+            # Automatically save the HDF5 file alongside the MP4s
+            self.save()
+            self.get_quick_summary()
         elif self.recording:
             print("[WARN] Episode ended but no data was recorded")
         self.recording = False
     
     def save(self):
-        """Save all episodes from this session to timestamped file"""
+        """Save each episode from this session to its own HDF5 file"""
         if len(self.episodes) == 0:
             print("[WARN] No episodes to save")
             return
         
+        saved_count = 0
         try:
-            # Open the file in Append mode 'a' so it doesn't overwrite existing episodes
-            with h5py.File(self.save_path, 'a') as f:
-                for episode in self.episodes:
-                    # Get robust episode_num from dict or fallback to iteration count
-                    episode_num = episode.get('episode_num', 0)
+            for episode in self.episodes:
+                episode_num = episode.get('episode_num', 0)
+                file_path = self.save_dir / f"robot_demos_{episode_num}.hdf5"
+                
+                # Use 'w' mode as each episode gets its own new file
+                with h5py.File(file_path, 'w') as f:
                     grp = f.create_group(f'episode_{episode_num}')
                     for key, value in episode.items():
                         # Skip video_frames (already saved as MP4) and internal metadata
                         if key in ('video_frames', 'episode_num'):
                             continue
-                        if key == 'video_path':
-                            # Legacy support or if there's only one video
+                        elif key == 'video_path':
                              grp.attrs['video_path'] = value if value else ""
                         elif key == 'video_paths':
                             # Store paths for all cameras
                             for cam_name, path in value.items():
-                                grp.attrs[f'video_path_{cam_name}'] = path
+                                grp.attrs[f'video_path_{cam_name}'] = str(path)
                         else:
                             grp.create_dataset(key, data=np.array(value))
+                saved_count += 1
             
-            print(f"[SUCCESS] Saved {len(self.episodes)} episodes to:")
-            print(f"  {self.save_path.absolute()}")
+            print(f"[SUCCESS] Saved {saved_count} episodes individual files to {self.save_dir.absolute()}")
             
             # Clear episodes from memory after successful save
             self.episodes = []
@@ -289,14 +285,7 @@ class DemonstrationRecorder:
         print("DEMONSTRATION STATISTICS")
         print("="*60)
         
-        print(f"\n📁 Current Session File:")
-        print(f"   {self.save_path}")
-        
-        if self.save_path.exists():
-            file_size_kb = self.save_path.stat().st_size / 1024
-            print(f"   Size: {file_size_kb:.2f} KB")
-        else:
-            print(f"   Status: Not saved yet")
+        print(f"\n📁 Saving format: 1 file per episode (e.g., robot_demos_0.hdf5)")
         
         # Episodes in memory
         episodes_in_memory = [len(ep['observations']) for ep in self.episodes]
@@ -320,8 +309,7 @@ class DemonstrationRecorder:
             if detailed:
                 print(f"\n📋 Per-Episode Breakdown:")
                 for i, steps in enumerate(episodes_in_memory):
-                    status = "✓ Saved" if self.save_path.exists() else "⚠ Unsaved"
-                    print(f"   episode_{i}: {steps} steps - {status}")
+                    print(f"   episode_{i} in memory: {steps} steps (unsaved)")
         
         # Show all files in directory
         if self.save_dir.exists():
@@ -334,8 +322,7 @@ class DemonstrationRecorder:
                         with h5py.File(file_path, 'r') as f:
                             num_eps = len(f.keys())
                             total_all_episodes += num_eps
-                            marker = "← Current" if file_path == self.save_path else ""
-                            print(f"   {file_path.name}: {num_eps} episodes {marker}")
+                            print(f"   {file_path.name}: {num_eps} episodes")
                     except:
                         print(f"   {file_path.name}: Error reading")
                 print(f"\n   Total episodes across all sessions: {total_all_episodes}")
@@ -626,13 +613,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         def _stop_recording():
             recorder.end_episode()
-            recorder.get_quick_summary()
-            print("[RECORDING] Stopped episode")
-
-        def _save_demos():
-            recorder.save()
-            recorder.get_stats(detailed=True) 
-            print("[RECORDING] All demonstrations saved to file")
+            print("[RECORDING] Stopped episode and saved HDF5 data")
 
         # Create UI windows
         gripper_window = ui.Window("Gripper", width=180, height=80)
@@ -642,13 +623,12 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 ui.Button("Toggle Gripper", clicked_fn=_toggle_gripper_cb, height=40)
 
         # Recording control window
-        recording_window = ui.Window("Recording", width=180, height=150, position_x=200)
+        recording_window = ui.Window("Recording", width=180, height=110, position_x=200)
         with recording_window.frame:
             with ui.VStack(spacing=10):
                 ui.Label("Demonstration Recording")
                 ui.Button("Start Recording", clicked_fn=_start_recording, height=40)
-                ui.Button("Stop Recording", clicked_fn=_stop_recording, height=40)
-                ui.Button("Save All Demos", clicked_fn=_save_demos, height=40)
+                ui.Button("Stop Recording / Save", clicked_fn=_stop_recording, height=40)
 
     else:
         step = 0
