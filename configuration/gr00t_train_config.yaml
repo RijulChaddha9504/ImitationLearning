@@ -1,0 +1,32 @@
+# Isaac GR00T Imitation Learning Configuration
+# Adjust paths and dimensions depending on your specific GR00T setup.
+
+dataset:
+  type: "robomimic"
+  data_path: "demonstrations/robomimic_dataset.hdf5"
+  seq_length: 10
+  action_dim: 8
+  obs_keys:
+    - "state"            # Assuming shape (N, 38)
+    - "joint_positions"  # Assuming shape (N, 7)
+    - "ee_poses"         # Assuming shape (N, 7)
+
+model:
+  type: "transformer_policy" # or diffusion_policy
+  hidden_dim: 256
+  num_layers: 4
+  num_heads: 8
+  dropout: 0.1
+
+training:
+  batch_size: 64
+  learning_rate: 1e-4
+  num_epochs: 200
+  weight_decay: 1e-5
+  save_interval: 10
+  log_interval: 10
+  checkpoint_dir: "checkpoints"
+
+environment:
+  name: "IsaacLab-TaskSpace"
+  action_space: "continuous"
