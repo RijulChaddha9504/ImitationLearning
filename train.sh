@@ -1,22 +1,21 @@
 #!/bin/bash
-# Script to launch Isaac GR00T training
 
 echo "Starting Isaac GR00T Imitation Learning Training..."
 
 CONFIG_PATH="$(pwd)/configuration/gr00t_train_config.yaml"
 echo "Using configuration: $CONFIG_PATH"
 
-# Go to GR00T repo
 cd ~/Isaac-GR00T || { echo "Error: ~/Isaac-GR00T not found."; exit 1; }
 
-# Activate environment
 source .venv/bin/activate
 source $HOME/.local/bin/env
 
-# Verify GPU before starting
+# Disable DeepSpeed CUDA op compilation
+export DS_BUILD_OPS=0
+export DEEPSPEED_SKIP_CUDA_CHECK=1
+
 python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
-# Launch training
 uv run python gr00t/experiment/launch_finetune.py \
     --experiment-dir "/workspace/isaaclab/ImitationLearning/checkpoints" \
     --dataset-path "/workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5" \
