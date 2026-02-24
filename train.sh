@@ -16,8 +16,7 @@ cd ~/Isaac-GR00T || { echo "Error: ~/Isaac-GR00T not found. Did you run the inst
 source .venv/bin/activate
 source $HOME/.local/bin/env
 
-# Run the training script provided by Isaac GR00T
-# Note: For multi-GPU, Isaac-GR00T usually uses torchrun. For a single GPU or debug, python works but torchrun is safer if available.
-python scripts/train.py --config-name="$CONFIG_PATH"
+# Run the training script provided by Isaac GR00T (using launch_finetune.py)
+uv run python gr00t/experiment/launch_finetune.py --config-name="$CONFIG_PATH"
 
 echo "Training command finished."
