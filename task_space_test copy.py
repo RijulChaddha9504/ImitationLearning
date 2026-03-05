@@ -71,6 +71,7 @@ except ImportError:
 if not args_cli.headless:
     from isaaclab.devices import Se3Keyboard
     import omni.ui as ui
+from isaaclab.devices.keyboard.se3_keyboard import Se3KeyboardCfg
 
 
 # Add recording functionality
