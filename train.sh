@@ -7,8 +7,8 @@ echo "Using configuration: $CONFIG_PATH"
 
 cd /workspace/Isaac-GR00T
 
-source .venv/bin/activate
-source $HOME/.local/bin/env
+#source .venv/bin/activate
+#source $HOME/.local/bin/env
 
 # Disable DeepSpeed CUDA op compilation
 export DS_BUILD_OPS=0
@@ -16,7 +16,7 @@ export DEEPSPEED_SKIP_CUDA_CHECK=1
 
 python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
-uv run python gr00t/experiment/launch_finetune.py \
+python gr00t/experiment/launch_finetune.py \
     --experiment-dir "/workspace/isaaclab/ImitationLearning/checkpoints" \
     --dataset-path "/workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5" \
     --dataset-val-path "/workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5" \
