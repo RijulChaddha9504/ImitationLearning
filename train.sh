@@ -5,7 +5,7 @@ echo "Starting Isaac GR00T Imitation Learning Training..."
 CONFIG_PATH="$(pwd)/configuration/gr00t_train_config.yaml"
 echo "Using configuration: $CONFIG_PATH"
 
-cd ~/Isaac-GR00T || { echo "Error: ~/Isaac-GR00T not found."; exit 1; }
+cd /workspace/Isaac-GR00T
 
 source .venv/bin/activate
 source $HOME/.local/bin/env
