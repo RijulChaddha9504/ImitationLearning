@@ -1,203 +1,138 @@
 #!/usr/bin/env python3
 """
-Convert RoboMimic HDF5 dataset to LeRobot format for NVIDIA GR00T-N1.6 finetuning.
+Convert RoboMimic HDF5 dataset to LeRobot v2 format for NVIDIA GR00T-N1.6 finetuning.
+
+FIX: GR00T globs for parquet files as "data/*/*.parquet" — files must be inside
+     a subdirectory, e.g. data/chunk-000/episode_000000.parquet
 
 Usage:
     /isaac-sim/kit/python/bin/python3 convert_robomimic_to_lerobot.py \
         --input /workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5 \
-        --output /workspace/isaaclab/ImitationLearning/demonstrations/lerobot_dataset
-
-Dataset structure detected:
-    - actions:          (N, 8)  float32  — 7 joint targets + 1 gripper
-    - obs/ee_poses:     (N, 7)  float32  — end-effector pos (3) + quat (4)
-    - obs/joint_positions: (N, 7) float32 — joint angles
-    - obs/state:        (N, 22) float32  — full state vector
-    - dones:            (N,)    float64
-    - rewards:          (N,)    float64
+        --output /workspace/isaaclab/ImitationLearning/demonstrations/lerobot_dataset \
+        --task-description "robot manipulation task" \
+        --fps 20
 """
 
 import argparse
 import json
-import os
 import shutil
 from pathlib import Path
 
 import h5py
 import numpy as np
+import pandas as pd
 
 
-# ── LeRobot v2 filenames ────────────────────────────────────────────────────
-LEROBOT_INFO_FILENAME   = "meta/info.json"
-LEROBOT_STATS_FILENAME  = "meta/stats.json"
-LEROBOT_EPISODES_FILENAME = "meta/episodes.json"
-LEROBOT_TASKS_FILENAME  = "meta/tasks.json"
-DATA_DIR                = "data"
-CHUNK_SIZE              = 1000   # episodes per parquet chunk
+INFO_FILE     = "meta/info.json"
+STATS_FILE    = "meta/stats.json"
+EPISODES_FILE = "meta/episodes.json"
+TASKS_FILE    = "meta/tasks.json"
+CHUNK_DIR     = "data/chunk-000"   # GR00T glob: data/*/*.parquet
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Convert RoboMimic HDF5 → LeRobot v2")
-    parser.add_argument("--input",  required=True, help="Path to robomimic_dataset.hdf5")
-    parser.add_argument("--output", required=True, help="Output LeRobot dataset directory")
-    parser.add_argument("--task-description", default="robot manipulation task",
-                        help="Natural language task description (used as language annotation)")
-    parser.add_argument("--fps", type=int, default=20,
-                        help="Dataset collection framerate (default: 20 Hz)")
-    return parser.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument("--input",  required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--task-description", default="robot manipulation task")
+    p.add_argument("--fps", type=int, default=20)
+    return p.parse_args()
 
 
-def compute_stats(all_values: np.ndarray) -> dict:
-    """Compute mean/std/min/max statistics for a modality array."""
+def compute_stats(arr: np.ndarray) -> dict:
     return {
-        "mean": all_values.mean(axis=0).tolist(),
-        "std":  all_values.std(axis=0).tolist(),
-        "min":  all_values.min(axis=0).tolist(),
-        "max":  all_values.max(axis=0).tolist(),
+        "mean": arr.mean(axis=0).tolist(),
+        "std":  arr.std(axis=0).tolist(),
+        "min":  arr.min(axis=0).tolist(),
+        "max":  arr.max(axis=0).tolist(),
+        "q01":  np.quantile(arr, 0.01, axis=0).tolist(),
+        "q99":  np.quantile(arr, 0.99, axis=0).tolist(),
     }
 
 
 def main():
     args = parse_args()
+    src  = Path(args.input)
+    dst  = Path(args.output)
 
-    input_path  = Path(args.input)
-    output_path = Path(args.output)
+    assert src.exists(), f"Input not found: {src}"
 
-    assert input_path.exists(), f"Input file not found: {input_path}"
+    if dst.exists():
+        print(f"[WARN] Removing existing output: {dst}")
+        shutil.rmtree(dst)
 
-    # ── Clean and create output directory ──────────────────────────────────
-    if output_path.exists():
-        print(f"[WARN] Output directory exists, removing: {output_path}")
-        shutil.rmtree(output_path)
+    (dst / "meta").mkdir(parents=True)
+    (dst / CHUNK_DIR).mkdir(parents=True)
 
-    (output_path / "meta").mkdir(parents=True)
-    (output_path / DATA_DIR).mkdir(parents=True)
+    print(f"[INFO] Reading {src}")
 
-    print(f"[INFO] Reading: {input_path}")
+    episodes_meta = []
+    all_actions, all_ee, all_joints, all_states = [], [], [], []
+    total_frames = 0
 
-    with h5py.File(input_path, "r") as f:
-        demo_keys = sorted(f["data"].keys())  # demo_0, demo_1, ...
+    with h5py.File(src, "r") as f:
+        demo_keys  = sorted(f["data"].keys())
         n_episodes = len(demo_keys)
-        print(f"[INFO] Found {n_episodes} episodes: {demo_keys}")
-
-        # ── Collect all data ────────────────────────────────────────────────
-        episodes_data   = []   # list of dicts per episode
-        all_actions     = []
-        all_ee_poses    = []
-        all_joint_pos   = []
-        all_states      = []
-
-        total_frames = 0
+        print(f"[INFO] {n_episodes} episodes: {demo_keys}\n")
 
         for ep_idx, key in enumerate(demo_keys):
-            grp     = f["data"][key]
-            actions = grp["actions"][:]              # (T, 8)
-            ee      = grp["obs/ee_poses"][:]         # (T, 7)
-            joints  = grp["obs/joint_positions"][:]  # (T, 7)
-            state   = grp["obs/state"][:]            # (T, 22)
-            dones   = grp["dones"][:]
-            rewards = grp["rewards"][:]
+            g       = f["data"][key]
+            actions = g["actions"][:]              # (T, 8)
+            ee      = g["obs/ee_poses"][:]          # (T, 7)
+            joints  = g["obs/joint_positions"][:]   # (T, 7)
+            state   = g["obs/state"][:]             # (T, 22)
+            dones   = g["dones"][:]
+            rewards = g["rewards"][:]
+            T       = actions.shape[0]
 
-            T = actions.shape[0]
-            print(f"  Episode {ep_idx:3d} ({key}): {T} frames")
+            print(f"  ep {ep_idx:02d} ({key}): {T} frames")
 
-            episodes_data.append({
+            rows = []
+            for t in range(T):
+                rows.append({
+                    "episode_index":               ep_idx,
+                    "frame_index":                 t,
+                    "timestamp":                   round(t / args.fps, 6),
+                    "task_index":                  0,
+                    "action":                      actions[t].tolist(),
+                    "observation.state":           state[t].tolist(),
+                    "observation.ee_pose":         ee[t].tolist(),
+                    "observation.joint_positions": joints[t].tolist(),
+                    "next.done":                   bool(dones[t]),
+                    "next.reward":                 float(rewards[t]),
+                })
+
+            df = pd.DataFrame(rows)
+            out_path = dst / CHUNK_DIR / f"episode_{ep_idx:06d}.parquet"
+            df.to_parquet(out_path, index=False)
+            print(f"    → {out_path}")
+
+            episodes_meta.append({
                 "episode_index": ep_idx,
-                "tasks":  [args.task_description],
-                "length": T,
-                "actions":     actions,
-                "ee_poses":    ee,
-                "joint_positions": joints,
-                "state":       state,
-                "dones":       dones,
-                "rewards":     rewards,
+                "tasks":         [args.task_description],
+                "length":        T,
             })
 
             all_actions.append(actions)
-            all_ee_poses.append(ee)
-            all_joint_pos.append(joints)
+            all_ee.append(ee)
+            all_joints.append(joints)
             all_states.append(state)
             total_frames += T
 
-    print(f"\n[INFO] Total frames across all episodes: {total_frames}")
-
-    # ── Write data/episode_XXXXXX.jsonl files ───────────────────────────────
-    # LeRobot stores each episode as a JSONL file (one JSON object per frame)
-    print("[INFO] Writing episode data files...")
-
-    for ep in episodes_data:
-        ep_idx = ep["episode_index"]
-        ep_dir = output_path / DATA_DIR
-        ep_file = ep_dir / f"episode_{ep_idx:06d}.jsonl"
-
-        T = ep["length"]
-        with open(ep_file, "w") as fout:
-            for t in range(T):
-                frame = {
-                    "episode_index":    ep_idx,
-                    "frame_index":      t,
-                    "timestamp":        round(t / args.fps, 6),
-                    "task":             ep["tasks"][0],
-
-                    # Actions
-                    "action":           ep["actions"][t].tolist(),
-
-                    # Observations
-                    "observation.state": ep["state"][t].tolist(),
-                    "observation.ee_pose": ep["ee_poses"][t].tolist(),
-                    "observation.joint_positions": ep["joint_positions"][t].tolist(),
-
-                    # Episode metadata
-                    "next.done":        bool(ep["dones"][t]),
-                    "next.reward":      float(ep["rewards"][t]),
-                }
-                fout.write(json.dumps(frame) + "\n")
-
-        if (ep_idx + 1) % 10 == 0 or ep_idx == len(episodes_data) - 1:
-            print(f"  Written episode {ep_idx + 1}/{len(episodes_data)}")
-
-    # ── Compute statistics ──────────────────────────────────────────────────
-    print("[INFO] Computing dataset statistics...")
-
-    all_actions_np  = np.concatenate(all_actions,  axis=0)
-    all_ee_np       = np.concatenate(all_ee_poses, axis=0)
-    all_joints_np   = np.concatenate(all_joint_pos, axis=0)
-    all_states_np   = np.concatenate(all_states,   axis=0)
-
+    # ── Stats ────────────────────────────────────────────────────────────────
+    print("\n[INFO] Computing statistics...")
     stats = {
-        "action":                        compute_stats(all_actions_np),
-        "observation.state":             compute_stats(all_states_np),
-        "observation.ee_pose":           compute_stats(all_ee_np),
-        "observation.joint_positions":   compute_stats(all_joints_np),
+        "action":                      compute_stats(np.concatenate(all_actions)),
+        "observation.state":           compute_stats(np.concatenate(all_states)),
+        "observation.ee_pose":         compute_stats(np.concatenate(all_ee)),
+        "observation.joint_positions": compute_stats(np.concatenate(all_joints)),
     }
 
-    # ── Write meta/stats.json ───────────────────────────────────────────────
-    stats_path = output_path / LEROBOT_STATS_FILENAME
-    with open(stats_path, "w") as f:
-        json.dump(stats, f, indent=2)
-    print(f"[INFO] Wrote {stats_path}")
+    with open(dst / STATS_FILE,    "w") as f: json.dump(stats,         f, indent=2)
+    with open(dst / EPISODES_FILE, "w") as f: json.dump(episodes_meta, f, indent=2)
+    with open(dst / TASKS_FILE,    "w") as f:
+        json.dump([{"task_index": 0, "task": args.task_description}], f, indent=2)
 
-    # ── Write meta/episodes.json ────────────────────────────────────────────
-    episodes_meta = [
-        {
-            "episode_index": ep["episode_index"],
-            "tasks":         ep["tasks"],
-            "length":        ep["length"],
-        }
-        for ep in episodes_data
-    ]
-    ep_path = output_path / LEROBOT_EPISODES_FILENAME
-    with open(ep_path, "w") as f:
-        json.dump(episodes_meta, f, indent=2)
-    print(f"[INFO] Wrote {ep_path}")
-
-    # ── Write meta/tasks.json ───────────────────────────────────────────────
-    tasks_meta = [{"task_index": 0, "task": args.task_description}]
-    tasks_path = output_path / LEROBOT_TASKS_FILENAME
-    with open(tasks_path, "w") as f:
-        json.dump(tasks_meta, f, indent=2)
-    print(f"[INFO] Wrote {tasks_path}")
-
-    # ── Write meta/info.json ────────────────────────────────────────────────
     info = {
         "codebase_version": "v2.0",
         "robot_type":       "custom",
@@ -205,60 +140,49 @@ def main():
         "total_frames":     total_frames,
         "fps":              args.fps,
         "splits":           {"train": f"0:{n_episodes}"},
-        "data_path":        f"{DATA_DIR}/episode_{{episode_index:06d}}.jsonl",
+        "data_path":        f"{CHUNK_DIR}/episode_{{episode_index:06d}}.parquet",
         "features": {
             "action": {
-                "dtype":  "float32",
-                "shape":  [8],
-                "names":  [
-                    "joint_0", "joint_1", "joint_2", "joint_3",
-                    "joint_4", "joint_5", "joint_6", "gripper"
-                ],
+                "dtype": "float32", "shape": [8],
+                "names": ["joint_0","joint_1","joint_2","joint_3",
+                          "joint_4","joint_5","joint_6","gripper"],
             },
             "observation.state": {
-                "dtype": "float32",
-                "shape": [22],
+                "dtype": "float32", "shape": [22],
                 "names": [f"state_{i}" for i in range(22)],
             },
             "observation.ee_pose": {
-                "dtype": "float32",
-                "shape": [7],
-                "names": ["x", "y", "z", "qx", "qy", "qz", "qw"],
+                "dtype": "float32", "shape": [7],
+                "names": ["x","y","z","qx","qy","qz","qw"],
             },
             "observation.joint_positions": {
-                "dtype": "float32",
-                "shape": [7],
+                "dtype": "float32", "shape": [7],
                 "names": [f"joint_{i}" for i in range(7)],
             },
         },
     }
+    with open(dst / INFO_FILE, "w") as f: json.dump(info, f, indent=2)
 
-    info_path = output_path / LEROBOT_INFO_FILENAME
-    with open(info_path, "w") as f:
-        json.dump(info, f, indent=2)
-    print(f"[INFO] Wrote {info_path}")
-
-    # ── Summary ─────────────────────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("✅  Conversion complete!")
-    print(f"   Output directory : {output_path}")
-    print(f"   Episodes         : {n_episodes}")
-    print(f"   Total frames     : {total_frames}")
-    print(f"   FPS              : {args.fps}")
-    print(f"   Task             : {args.task_description}")
-    print("=" * 60)
-    print("\nNext step — run training:")
+    print(f"\n{'='*60}")
+    print(f"✅  Conversion complete!")
+    print(f"   Output   : {dst}")
+    print(f"   Episodes : {n_episodes}  |  Frames: {total_frames}")
+    print(f"   Parquet  : {dst / CHUNK_DIR}/*.parquet")
+    print(f"{'='*60}")
     print(f"""
-TRANSFORMERS_ATTN_IMPLEMENTATION=eager \\
-/isaac-sim/kit/python/bin/python3 gr00t/experiment/launch_finetune.py \\
-    --base-model-path "nvidia/GR00T-N1.6-3B" \\
-    --dataset-path "{output_path}" \\
-    --embodiment-tag "NEW_EMBODIMENT" \\
-    --modality-config-path "/workspace/Isaac-GR00T/gr00t/configs/data/custom_embodiment.py" \\
-    --output-dir "/workspace/isaaclab/ImitationLearning/checkpoints" \\
-    --global-batch-size 64 \\
-    --learning-rate 1e-4 \\
-    --max-steps 10000
+Run training from /workspace/Isaac-GR00T:
+
+  cd /workspace/Isaac-GR00T
+  TRANSFORMERS_ATTN_IMPLEMENTATION=eager \\
+  /isaac-sim/kit/python/bin/python3 gr00t/experiment/launch_finetune.py \\
+      --base-model-path "nvidia/GR00T-N1.6-3B" \\
+      --dataset-path "{dst}" \\
+      --embodiment-tag "NEW_EMBODIMENT" \\
+      --modality-config-path "/workspace/Isaac-GR00T/gr00t/configs/data/custom_embodiment.py" \\
+      --output-dir "/workspace/isaaclab/ImitationLearning/checkpoints" \\
+      --global-batch-size 64 \\
+      --learning-rate 1e-4 \\
+      --max-steps 10000
 """)
 
 
