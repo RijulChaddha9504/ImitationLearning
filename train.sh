@@ -14,9 +14,9 @@ cd /workspace/Isaac-GR00T
 export DS_BUILD_OPS=0
 export DEEPSPEED_SKIP_CUDA_CHECK=1
 
-python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
-python gr00t/experiment/launch_finetune.py \
+python3 gr00t/experiment/launch_finetune.py \
     --experiment-dir "/workspace/isaaclab/ImitationLearning/checkpoints" \
     --dataset-path "/workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5" \
     --dataset-val-path "/workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5" \
