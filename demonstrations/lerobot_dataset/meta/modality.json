@@ -1,0 +1,42 @@
+{
+  "video": {
+    "camera": {
+      "original_key": "observation.images.camera"
+    },
+    "camera_3": {
+      "original_key": "observation.images.camera_3"
+    },
+    "camera_9": {
+      "original_key": "observation.images.camera_9"
+    }
+  },
+  "state": {
+    "joint_positions": {
+      "start": 0,
+      "end": 7,
+      "original_key": "observation.joint_positions"
+    },
+    "ee_poses": {
+      "start": 0,
+      "end": 7,
+      "original_key": "observation.ee_pose"
+    }
+  },
+  "action": {
+    "joint_positions": {
+      "start": 0,
+      "end": 7,
+      "original_key": "action"
+    },
+    "gripper": {
+      "start": 7,
+      "end": 8,
+      "original_key": "action"
+    }
+  },
+  "annotation": {
+    "human.task_description": {
+      "original_key": "annotation.human.task_description"
+    }
+  }
+}

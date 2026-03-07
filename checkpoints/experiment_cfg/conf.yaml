@@ -61,13 +61,23 @@ model:
 data:
   datasets:
   - dataset_paths:
-    - /workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5
+    - /workspace/isaaclab/ImitationLearning/demonstrations/lerobot_dataset
     embodiment_tag: new_embodiment
     mix_ratio: 1.0
     dataset_type: physical_embodiment
     val_dataset_path: null
   modality_configs:
     new_embodiment:
+      video:
+        delta_indices:
+        - 0
+        modality_keys:
+        - camera
+        - camera_3
+        - camera_9
+        sin_cos_embedding_keys: null
+        mean_std_embedding_keys: null
+        action_configs: null
       state:
         delta_indices:
         - 0

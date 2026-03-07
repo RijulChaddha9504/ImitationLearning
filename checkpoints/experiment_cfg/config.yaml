@@ -4,7 +4,7 @@ data: !!python/object:gr00t.configs.data.data_config.DataConfig
   datasets:
   - !!python/object:gr00t.configs.data.data_config.SingleDatasetConfig
     dataset_paths:
-    - /workspace/isaaclab/ImitationLearning/demonstrations/robomimic_dataset.hdf5
+    - /workspace/isaaclab/ImitationLearning/demonstrations/lerobot_dataset
     dataset_type: physical_embodiment
     embodiment_tag: new_embodiment
     mix_ratio: 1.0
@@ -74,6 +74,16 @@ data: !!python/object:gr00t.configs.data.data_config.DataConfig
         modality_keys:
         - joint_positions
         - ee_poses
+        sin_cos_embedding_keys: null
+      video: !!python/object:gr00t.data.types.ModalityConfig
+        action_configs: null
+        delta_indices:
+        - 0
+        mean_std_embedding_keys: null
+        modality_keys:
+        - camera
+        - camera_3
+        - camera_9
         sin_cos_embedding_keys: null
   mode: single_turn
   multiprocessing_context: fork
