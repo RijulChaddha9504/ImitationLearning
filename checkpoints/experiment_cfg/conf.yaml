@@ -15,7 +15,7 @@ model:
   load_bf16: false
   collator_overwrite_image_inputs: false
   eagle_collator: true
-  backbone_trainable_params_fp32: true
+  backbone_trainable_params_fp32: false
   image_crop_size: null
   image_target_size: null
   shortest_image_edge: 256
@@ -150,10 +150,10 @@ data:
 training:
   output_dir: /workspace/isaaclab/ImitationLearning/checkpoints
   experiment_name: null
-  max_steps: 10000
-  global_batch_size: 64
+  max_steps: 100
+  global_batch_size: 2
   batch_size: null
-  gradient_accumulation_steps: 1
+  gradient_accumulation_steps: 4
   learning_rate: 0.0001
   lr_scheduler_type: cosine
   weight_decay: 1.0e-05
@@ -181,15 +181,15 @@ training:
   save_best_eval_metric_name: ''
   save_best_eval_metric_greater_is_better: true
   deepspeed_stage: 2
-  gradient_checkpointing: false
+  gradient_checkpointing: true
   transformers_trust_remote_code: true
   transformers_local_files_only: false
   transformers_cache_dir: null
   transformers_access_token: null
   use_ddp: false
   ddp_bucket_cap_mb: 100
-  num_gpus: 1
-  dataloader_num_workers: 2
+  num_gpus: 2
+  dataloader_num_workers: 0
   remove_unused_columns: false
   use_wandb: false
   wandb_project: finetune-gr00t-n1d6
@@ -202,5 +202,5 @@ training:
   - 0
   open_loop_eval_steps_per_traj: 100
   open_loop_eval_plot_indices: null
-max_steps: 10000
+max_steps: 100
 save_steps: 1000

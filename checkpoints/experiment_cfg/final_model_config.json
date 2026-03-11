@@ -14,7 +14,7 @@
   "load_bf16": true,
   "collator_overwrite_image_inputs": false,
   "eagle_collator": true,
-  "backbone_trainable_params_fp32": true,
+  "backbone_trainable_params_fp32": false,
   "apply_sincos_state_encoding": true,
   "use_relative_action": true,
   "max_state_dim": 128,

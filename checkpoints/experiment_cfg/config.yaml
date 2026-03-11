@@ -104,7 +104,7 @@ model: !!python/object:gr00t.configs.model.gr00t_n1d6.Gr00tN1d6Config
   add_cross_attention: false
   architectures: null
   backbone_model_type: eagle
-  backbone_trainable_params_fp32: true
+  backbone_trainable_params_fp32: false
   bad_words_ids: null
   begin_suppress_tokens: null
   bos_token_id: null
@@ -188,7 +188,7 @@ training: !!python/object:gr00t.configs.training.training_config.TrainingConfig
   assert_loss_less_than: null
   batch_size: null
   bf16: true
-  dataloader_num_workers: 2
+  dataloader_num_workers: 0
   ddp_bucket_cap_mb: 100
   deepspeed_stage: 2
   enable_open_loop_eval: false
@@ -200,17 +200,17 @@ training: !!python/object:gr00t.configs.training.training_config.TrainingConfig
   eval_strategy: 'no'
   experiment_name: null
   fp16: false
-  global_batch_size: 64
-  gradient_accumulation_steps: 1
-  gradient_checkpointing: false
+  global_batch_size: 2
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
   learning_rate: 0.0001
   logging_steps: 10
   lr_scheduler_type: cosine
   max_concurrent_uploads: 2
   max_grad_norm: 1.0
   max_retries: 3
-  max_steps: 10000
-  num_gpus: 1
+  max_steps: 100
+  num_gpus: 2
   open_loop_eval_plot_indices: null
   open_loop_eval_steps_per_traj: 100
   open_loop_eval_traj_ids:
