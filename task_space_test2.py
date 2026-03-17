@@ -734,7 +734,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         )
 
         # Pass current orientation so controller can hold it fixed
-        diff_ik_controller.set_command(ee_command, ee_quat=ee_quat_b)
+        diff_ik_controller.set_command(ee_command, ee_pos=ee_pos_b, ee_quat=ee_quat_b)
 
         jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
         joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
