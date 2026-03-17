@@ -682,7 +682,6 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         # -----------------------
         # SMOOTH APPROACH LOGIC
         # -----------------------
-        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         
         '''position_error = goal_pose[:, 0:3] - smooth_target_pose[:, 0:3]
         distance_to_goal = torch.norm(position_error, dim=1, keepdim=True)
@@ -724,8 +723,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
 
         # IK computation
         # diff_ik_controller.set_command(smooth_target_pose)
-        diff_ik_controller.set_command(ee_command)
-        jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
+        # IK computation — compute EE pose FIRST, then set command
+        ee_pose_w = robot.data.body_state_w[:, robot_entity_cfg.body_ids[0], 0:7]
         root_pose_w = robot.data.root_state_w[:, 0:7]
         joint_pos = robot.data.joint_pos[:, robot_entity_cfg.joint_ids]
 
@@ -734,8 +733,11 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
             ee_pose_w[:, 0:3], ee_pose_w[:, 3:7]
         )
 
-        joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
+        # Pass current orientation so controller can hold it fixed
+        diff_ik_controller.set_command(ee_command, ee_quat=ee_quat_b)
 
+        jacobian = robot.root_physx_view.get_jacobians()[:, ee_jacobi_idx, :, robot_entity_cfg.joint_ids]
+        joint_pos_des = diff_ik_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
         # Set arm joint targets
         robot.set_joint_position_target(joint_pos_des, joint_ids=robot_entity_cfg.joint_ids)
 
