@@ -593,7 +593,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     # -----------------------
     if not args_cli.headless:
         try:
-            teleop = Se3Keyboard(pos_sensitivity=0.05, rot_sensitivity=0.05)
+            teleop = Se3Keyboard(pos_sensitivity=0.15, rot_sensitivity=0.05)
         except TypeError:
             try:
                 teleop = Se3Keyboard(0.05, 0.05)
