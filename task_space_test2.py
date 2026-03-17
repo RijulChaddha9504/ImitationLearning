@@ -648,7 +648,8 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
     #smooth_target_pose = goal_pose.clone()
     #previous_smooth_pose = smooth_target_pose.clone()
 
-    ee_command = torch.zeros(1, 6, device=sim.device)
+    ee_command = torch.zeros(1, 7, device=sim.device)
+    ee_command[0, 3] = 1.0
 
     # Main simulation loop
     while simulation_app.is_running():
@@ -660,18 +661,26 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
                 pos_delta, rot_delta = ret
 
             # Zero the command each step — only non-zero when a key is held
-            ee_command = torch.zeros(1, 6, device=sim.device)
+            ee_command = torch.zeros(1, 7, device=sim.device)
+            ee_command[0, 3] = 1.0  # default to identity rotation delta
+
             if isinstance(pos_delta, (list, tuple, np.ndarray)):
                 ee_command[0, 0:3] = torch.tensor(pos_delta[:3], dtype=torch.float32, device=sim.device)
-            if isinstance(rot_delta, (list, tuple, np.ndarray)):
-                ee_command[0, 3:6] = torch.tensor(rot_delta[:3], dtype=torch.float32, device=sim.device)
 
+            if isinstance(rot_delta, (list, tuple, np.ndarray)) and any(v != 0 for v in rot_delta[:3]):
+                delta_quat = quat_from_euler_xyz(
+                    torch.tensor([rot_delta[0]], device=sim.device),
+                    torch.tensor([rot_delta[1]], device=sim.device),
+                    torch.tensor([rot_delta[2]], device=sim.device),
+                )
+                ee_command[0, 3:7] = delta_quat[0]
             gripper_open_bool = gripper_state["open"]
             gripper_target_norm = 0.0 if gripper_open_bool else 1.0
 
         else:
             # Headless scripted motion — send a small sinusoidal x delta
-            ee_command = torch.zeros(1, 6, device=sim.device)
+            ee_command = torch.zeros(1, 7, device=sim.device)
+            ee_command[0, 3] = 1.0  # identity quaternion
             ee_command[0, 0] = 0.002 * float(torch.sin(torch.tensor(step * 0.1)))
             step += 1
 
@@ -767,7 +776,7 @@ def run_simulator(sim: sim_utils.SimulationContext, scene: InteractiveScene):
         
         # Action: joint position targets + gripper target
         action = torch.cat([
-            ee_command,
+            ee_command,  # now 7D: [dx, dy, dz, dqw, dqx, dqy, dqz]
             torch.tensor([[gripper_target_norm]], device=sim.device)
         ], dim=-1)
         
