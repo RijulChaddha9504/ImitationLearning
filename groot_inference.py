@@ -53,55 +53,48 @@ except ImportError:
 # GR00T Model Wrapper
 # ============================================================
 class GR00TInference:
-    """Wraps the fine-tuned GR00T model for inference."""
+    """Wraps the fine-tuned GR00T model for inference using official Gr00tPolicy."""
 
     def __init__(self, checkpoint_path: str, task_description: str, device: str = "cuda"):
-        self.device = device
         self.task_description = task_description
+        self.device = device
 
         print(f"[GR00T] Loading model from {checkpoint_path}...")
         sys.path.insert(0, '/workspace/Isaac-GR00T')
 
-        # Load modality config
         import gr00t.configs.data.custom_embodiment  # registers NEW_EMBODIMENT
+        from gr00t.policy.gr00t_policy import Gr00tPolicy
+        from gr00t.data.embodiment_tags import EmbodimentTag
 
-        from gr00t.model.gr00t_n1d6.gr00t_n1d6 import Gr00tN1d6
-        self.model = Gr00tN1d6.from_pretrained(
-            checkpoint_path,
-            trust_remote_code=True,
+        self.policy = Gr00tPolicy(
+            embodiment_tag=EmbodimentTag.NEW_EMBODIMENT,
+            model_path=checkpoint_path,
+            device=device,
         )
-        self.model.eval()
-        self.model.to(device)
         print("[GR00T] Model loaded successfully!")
-
-        # Load processor
-        processor_path = str(Path(checkpoint_path).parent / "processor")
 
     @torch.no_grad()
     def predict(self, joint_positions: np.ndarray, ee_pose: np.ndarray) -> np.ndarray:
         """
-        Given current joint positions and ee pose, predict next action.
-
-        Args:
-            joint_positions: shape (7,) - current joint positions
-            ee_pose: shape (7,) - current end-effector pose [x, y, z, qw, qx, qy, qz]
-
-        Returns:
-            action: shape (8,) - [7 joint positions + 1 gripper]
+        Returns action dict with keys 'joint_positions' and 'gripper'
         """
-        from gr00t.data.embodiment_tags import EmbodimentTag
-
-        # Build input batch
-        batch = {
-            "joint_positions": torch.tensor(joint_positions, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device),
-            "ee_poses": torch.tensor(ee_pose, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device),
-            "annotation.human.task_description": torch.tensor([0], device=self.device),
-            "embodiment_id": ["new_embodiment"],
+        observation = {
+            "video": {},  # no cameras in our dataset
+            "state": {
+                "joint_positions": np.array([[joint_positions]], dtype=np.float32),  # (1, 1, 7)
+                "ee_poses": np.array([[ee_pose]], dtype=np.float32),                 # (1, 1, 7)
+            },
+            "language": {
+                "annotation.human.task_description": [[self.task_description]]      # (1, 1)
+            },
         }
 
-        output = self.model(batch)
-        action_pred = output["action_pred"][0, 0].cpu().numpy()  # (8,)
-        return action_pred
+        action, _ = self.policy.get_action(observation)
+        # action['joint_positions'] shape: (1, 16, 7)
+        # action['gripper'] shape: (1, 16, 1)
+        joints = action['joint_positions'][0, 0]   # (7,) first step
+        gripper = action['gripper'][0, 0, 0]       # scalar
+        return np.append(joints, gripper)           # (8,)
 
 
 # ============================================================
