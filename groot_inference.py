@@ -87,8 +87,15 @@ class GR00TInference:
         from gr00t.data.embodiment_tags import EmbodimentTag
         from gr00t.data.types import MessageType, VLAStepData
 
+        # Create dummy black images (H, W, C) uint8 - required by processor
+        dummy_image = np.zeros((256, 256, 3), dtype=np.uint8)
+
         vla_step = VLAStepData(
-            images={},
+            images={
+                "camera":   dummy_image,
+                "camera_3": dummy_image,
+                "camera_9": dummy_image,
+            },
             states={
                 "joint_positions": joint_positions.reshape(1, -1).astype(np.float32),
                 "ee_poses": ee_pose.reshape(1, -1).astype(np.float32),
@@ -110,7 +117,6 @@ class GR00TInference:
         output = self.model.get_action(**collated)
         action_pred = output["action_pred"].float().cpu().numpy()
 
-        # Decode action
         states = {"joint_positions": joint_positions.reshape(1, 1, -1).astype(np.float32),
                 "ee_poses": ee_pose.reshape(1, 1, -1).astype(np.float32)}
         decoded = self.processor.decode_action(action_pred, EmbodimentTag.NEW_EMBODIMENT, states)
