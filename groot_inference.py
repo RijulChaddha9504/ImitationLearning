@@ -96,7 +96,7 @@ class GR00TInference:
             "joint_positions": torch.tensor(joint_positions, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device),
             "ee_poses": torch.tensor(ee_pose, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(self.device),
             "annotation.human.task_description": torch.tensor([0], device=self.device),
-            "embodiment_id": torch.tensor([EmbodimentTag.NEW_EMBODIMENT.value], device=self.device),
+            "embodiment_id": ["new_embodiment"],
         }
 
         output = self.model(batch)
