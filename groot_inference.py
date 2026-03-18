@@ -67,9 +67,8 @@ class GR00TInference:
         from transformers import AutoProcessor
 
         self.model = Gr00tN1d6.from_pretrained(
-            checkpoint_path,
+            str(Path(checkpoint_path).resolve()),
             trust_remote_code=True,
-            local_files_only=True,
         )
         self.model.eval()
         self.model.to(device=device, dtype=torch.bfloat16)
