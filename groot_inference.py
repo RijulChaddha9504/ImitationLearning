@@ -89,7 +89,7 @@ class GR00TInference:
         from gr00t.data.types import MessageType, VLAStepData
 
         # Create dummy black images (H, W, C) uint8 - required by processor
-        dummy_pil = PILImage.new('RGB', (640, 480), color=(128, 128, 128))
+        dummy_pil = PILImage.new('RGB', (256, 256), color=(128, 128, 128))
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         vla_step = VLAStepData(
