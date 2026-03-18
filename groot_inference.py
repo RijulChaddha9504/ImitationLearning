@@ -203,7 +203,10 @@ def run_simulator(sim, scene, groot: GR00TInference):
                 print(f"[Step {step_count}] Action: joints={predicted_joints.round(3)}, gripper={gripper_target_norm:.2f}")
 
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 print(f"[WARN] Inference failed at step {step_count}: {e}")
+                break  # stop after first error to see full traceback
 
         # Smooth approach to goal
         position_smoothing = 0.1
