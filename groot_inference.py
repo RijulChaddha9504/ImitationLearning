@@ -76,8 +76,6 @@ class GR00TInference:
 
         # Load processor
         processor_path = str(Path(checkpoint_path).parent / "processor")
-        from gr00t.data.dataset.gr00t_dataset import GR00tDatasetConfig
-        print(f"[GR00T] Processor ready.")
 
     @torch.no_grad()
     def predict(self, joint_positions: np.ndarray, ee_pose: np.ndarray) -> np.ndarray:
