@@ -65,8 +65,8 @@ class GR00TInference:
         # Load modality config
         import gr00t.configs.data.custom_embodiment  # registers NEW_EMBODIMENT
 
-        from transformers import AutoModel
-        self.model = AutoModel.from_pretrained(
+        from gr00t.model.gr00t_n1d6.gr00t_n1d6 import Gr00tN1d6
+        self.model = Gr00tN1d6.from_pretrained(
             checkpoint_path,
             trust_remote_code=True,
         )
