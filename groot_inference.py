@@ -62,15 +62,25 @@ class GR00TInference:
         print(f"[GR00T] Loading model from {checkpoint_path}...")
         sys.path.insert(0, '/workspace/Isaac-GR00T')
 
-        import gr00t.configs.data.custom_embodiment  # registers NEW_EMBODIMENT
-        from gr00t.policy.gr00t_policy import Gr00tPolicy
-        from gr00t.data.embodiment_tags import EmbodimentTag
+        import gr00t.configs.data.custom_embodiment
+        from gr00t.model.gr00t_n1d6.gr00t_n1d6 import Gr00tN1d6
+        from transformers import AutoProcessor
 
-        self.policy = Gr00tPolicy(
-            embodiment_tag=EmbodimentTag.NEW_EMBODIMENT,
-            model_path=checkpoint_path,
-            device=device,
+        self.model = Gr00tN1d6.from_pretrained(
+            checkpoint_path,
+            trust_remote_code=True,
+            local_files_only=True,
         )
+        self.model.eval()
+        self.model.to(device=device, dtype=torch.bfloat16)
+
+        processor_path = str(Path(checkpoint_path).parent / "processor")
+        self.processor = AutoProcessor.from_pretrained(
+            processor_path,
+            trust_remote_code=True,
+            local_files_only=True,
+        )
+        self.processor.eval()
         print("[GR00T] Model loaded successfully!")
 
     @torch.no_grad()
