@@ -95,8 +95,6 @@ class GR00TInference:
         vla_step = VLAStepData(
             images={
                 "camera":   dummy_image,
-                "camera_3": dummy_image,
-                "camera_9": dummy_image,
             },
             states={
                 "joint_positions": joint_positions.reshape(1, -1).astype(np.float32),
