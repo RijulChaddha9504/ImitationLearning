@@ -88,7 +88,7 @@ class GR00TInference:
         from gr00t.data.types import MessageType, VLAStepData
 
         # Create dummy black images (H, W, C) uint8 - required by processor
-        dummy_image = np.zeros((256, 256, 3), dtype=np.uint8)
+        dummy_image = np.ones((480, 640, 3), dtype=np.uint8) * 128
 
         vla_step = VLAStepData(
             images={
