@@ -1,6 +1,7 @@
 import argparse
 import sys
 import numpy as np
+from PIL import Image as PILImage
 from pathlib import Path
 
 """Robot Arm GR00T Inference - runs fine-tuned model to control robot in IsaacLab"""
@@ -88,7 +89,8 @@ class GR00TInference:
         from gr00t.data.types import MessageType, VLAStepData
 
         # Create dummy black images (H, W, C) uint8 - required by processor
-        dummy_image = np.ones((480, 640, 3), dtype=np.uint8) * 128
+        dummy_pil = PILImage.new('RGB', (640, 480), color=(128, 128, 128))
+        dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         vla_step = VLAStepData(
             images={
