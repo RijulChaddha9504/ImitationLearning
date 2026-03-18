@@ -84,26 +84,40 @@ class GR00TInference:
 
     @torch.no_grad()
     def predict(self, joint_positions: np.ndarray, ee_pose: np.ndarray) -> np.ndarray:
-        """
-        Returns action dict with keys 'joint_positions' and 'gripper'
-        """
-        observation = {
-            "video": {},  # no cameras in our dataset
-            "state": {
-                "joint_positions": np.array([[joint_positions]], dtype=np.float32),  # (1, 1, 7)
-                "ee_poses": np.array([[ee_pose]], dtype=np.float32),                 # (1, 1, 7)
-            },
-            "language": {
-                "annotation.human.task_description": [[self.task_description]]      # (1, 1)
-            },
-        }
+        from gr00t.data.embodiment_tags import EmbodimentTag
+        from gr00t.data.types import MessageType, VLAStepData
 
-        action, _ = self.policy.get_action(observation)
-        # action['joint_positions'] shape: (1, 16, 7)
-        # action['gripper'] shape: (1, 16, 1)
-        joints = action['joint_positions'][0, 0]   # (7,) first step
-        gripper = action['gripper'][0, 0, 0]       # scalar
-        return np.append(joints, gripper)           # (8,)
+        vla_step = VLAStepData(
+            images={},
+            states={
+                "joint_positions": joint_positions.reshape(1, -1).astype(np.float32),
+                "ee_poses": ee_pose.reshape(1, -1).astype(np.float32),
+            },
+            actions={},
+            text=self.task_description,
+            embodiment=EmbodimentTag.NEW_EMBODIMENT,
+        )
+
+        messages = [{"type": MessageType.EPISODE_STEP.value, "content": vla_step}]
+        processed = self.processor(messages)
+        collated = self.processor.collator([processed])
+
+        # Move to device
+        for k, v in collated.items():
+            if isinstance(v, torch.Tensor):
+                collated[k] = v.to(self.device, dtype=torch.bfloat16 if v.is_floating_point() else v.dtype)
+
+        output = self.model.get_action(**collated)
+        action_pred = output["action_pred"].float().cpu().numpy()
+
+        # Decode action
+        states = {"joint_positions": joint_positions.reshape(1, 1, -1).astype(np.float32),
+                "ee_poses": ee_pose.reshape(1, 1, -1).astype(np.float32)}
+        decoded = self.processor.decode_action(action_pred, EmbodimentTag.NEW_EMBODIMENT, states)
+
+        joints = decoded['joint_positions'][0, 0]  # (7,)
+        gripper = decoded['gripper'][0, 0, 0]       # scalar
+        return np.append(joints, gripper)
 
 
 # ============================================================
