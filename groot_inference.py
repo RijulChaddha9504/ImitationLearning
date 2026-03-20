@@ -112,6 +112,10 @@ class GR00TInference:
         cam3 = camera_3_frame if camera_3_frame is not None else dummy_image
         cam9 = camera_9_frame if camera_9_frame is not None else dummy_image
 
+        print(f"[DEBUG] cam shape={cam.shape}, dtype={cam.dtype}")
+        print(f"[DEBUG] cam3 shape={cam3.shape}, dtype={cam3.dtype}")
+        print(f"[DEBUG] cam9 shape={cam9.shape}, dtype={cam9.dtype}")
+
         vla_step = VLAStepData(
             images={
                 "camera": cam,
@@ -130,6 +134,10 @@ class GR00TInference:
         self.base_message["content"] = vla_step
         processed = self.processor([self.base_message])
         collated = self.processor.collator([processed])
+
+        for k, v in collated.items():
+            if isinstance(v, torch.Tensor):
+                print(f"[DEBUG] collated['{k}'] shape={v.shape}, dtype={v.dtype}")
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
