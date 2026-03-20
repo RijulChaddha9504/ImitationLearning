@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image as PILImage
 from pathlib import Path
 from datetime import datetime
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 """Robot Arm GR00T Inference - runs fine-tuned model to control robot in IsaacLab"""
 
@@ -210,7 +212,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     robot = FRANKA_PANDA_HIGH_PD_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     camera = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Camera",
-        update_period=0.1, height=480, width=640,
+        update_period=0.1, height=256, width=256,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0, focus_distance=400.0,
@@ -220,7 +222,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     )
     camera_3 = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Camera_3",
-        update_period=0.1, height=480, width=640,
+        update_period=0.1, height=256, width=256,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0, focus_distance=400.0,
@@ -230,7 +232,7 @@ class TableTopSceneCfg(InteractiveSceneCfg):
     )
     camera_9 = CameraCfg(
         prim_path="{ENV_REGEX_NS}/Camera_9",
-        update_period=0.1, height=480, width=640,
+        update_period=0.1, height=256, width=256,
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(
             focal_length=24.0, focus_distance=400.0,
@@ -264,7 +266,7 @@ def _get_camera_frame(sensor):
         # Normalize + resize ON GPU
         frame = frame.permute(2, 0, 1).unsqueeze(0).float()  # (1, C, H, W)
         frame = torch.nn.functional.interpolate(
-            frame, size=(32, 32), mode="bilinear", align_corners=False
+            frame, size=(256, 256), mode="bilinear", align_corners=False
         )
         frame = frame.squeeze(0).permute(1, 2, 0)  # back to HWC
 
