@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["VIDEO_MAX_PIXELS"] = str(256 * 256)
 
 """Robot Arm GR00T Inference - runs fine-tuned model to control robot in IsaacLab"""
 
