@@ -129,10 +129,13 @@ class GR00TInference:
         dummy_pil = PILImage.new('RGB', (256, 256), color=(128, 128, 128))
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
-        cam  = camera_frame   if camera_frame   is not None else dummy_image
-        cam3 = camera_3_frame if camera_3_frame is not None else dummy_image
-        cam9 = camera_9_frame if camera_9_frame is not None else dummy_image
+        def to_tchw(img):
+            return np.transpose(img, (2, 0, 1))[np.newaxis].astype(np.uint8)  # (1, 3, 256, 256)
 
+        cam  = to_tchw(camera_frame   if camera_frame   is not None else dummy_image)
+        cam3 = to_tchw(camera_3_frame if camera_3_frame is not None else dummy_image)
+        cam9 = to_tchw(camera_9_frame if camera_9_frame is not None else dummy_image)
+        
         print(f"[DEBUG] cam shape={cam.shape}, dtype={cam.dtype}")
         print(f"[DEBUG] cam3 shape={cam3.shape}, dtype={cam3.dtype}")
         print(f"[DEBUG] cam9 shape={cam9.shape}, dtype={cam9.dtype}")
