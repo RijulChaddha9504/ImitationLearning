@@ -145,17 +145,26 @@ class GR00TInference:
         print(f"[DEBUG] processed keys: {list(processed.keys())}", flush=True)
         collated = self.processor.collator([processed])
         print(f"[DEBUG] collated keys: {list(collated.keys())}", flush=True)
-        for k, v in collated.items():
-            if isinstance(v, torch.Tensor):
-                print(f"[DEBUG] collated['{k}'] shape={v.shape}", flush=True)
+        if 'inputs' in collated:
+            inputs = collated['inputs']
+            print(f"[DEBUG] inputs type: {type(inputs)}", flush=True)
+            if isinstance(inputs, dict):
+                for k, v in inputs.items():
+                    if isinstance(v, torch.Tensor):
+                        print(f"[DEBUG] inputs['{k}'] shape={v.shape}", flush=True)
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
                 print(f"[DEBUG] collated['{k}'] shape={v.shape}, dtype={v.dtype}", flush=True)
 
-        for k, v in collated.items():
-            if isinstance(v, torch.Tensor):
-                collated[k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
+        if 'inputs' in collated and isinstance(collated['inputs'], dict):
+            for k, v in collated['inputs'].items():
+                if isinstance(v, torch.Tensor):
+                    collated['inputs'][k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
+        else:
+            for k, v in collated.items():
+                if isinstance(v, torch.Tensor):
+                    collated[k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
 
         output = self.model.get_action(**collated)
         action_pred = output["action_pred"].float().cpu().numpy()
