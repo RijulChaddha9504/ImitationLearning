@@ -146,7 +146,7 @@ class GR00TInference:
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
-                print(f"[DEBUG] collated['{k}'] shape={v.shape}, dtype={v.dtype}")
+                print(f"[DEBUG] collated['{k}'] shape={v.shape}, dtype={v.dtype}", flush=True)
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
