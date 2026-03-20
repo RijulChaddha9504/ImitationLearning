@@ -85,6 +85,14 @@ class GR00TInference:
         self.model.eval()
         self.model.to(device=device, dtype=torch.float16)
 
+        if hasattr(self.model, 'backbone') and hasattr(self.model.backbone, 'model'):
+            eagle_cfg = self.model.backbone.model.config
+            if hasattr(eagle_cfg, 'max_dynamic_tiles'):
+                eagle_cfg.max_dynamic_tiles = 1
+                eagle_cfg.min_dynamic_tiles = 1
+                eagle_cfg.dynamic_image_size = False
+                print(f"[GR00T] Forced max_dynamic_tiles=1 to prevent OOM")
+
         processor_path = str(Path(checkpoint_path).parent / "processor")
         self.processor = AutoProcessor.from_pretrained(
             processor_path,
