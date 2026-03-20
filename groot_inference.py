@@ -5,8 +5,11 @@ from PIL import Image as PILImage
 from pathlib import Path
 from datetime import datetime
 import os
+import sys
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["VIDEO_MAX_PIXELS"] = str(256 * 256)
+os.environ["MAX_PIXELS"] = str(256 * 256)        # ADD THIS - Eagle checks this key too
+os.environ["MIN_PIXELS"] = str(4 * 28 * 28)      # ADD THIS
 
 """Robot Arm GR00T Inference - runs fine-tuned model to control robot in IsaacLab"""
 
@@ -100,6 +103,14 @@ class GR00TInference:
             trust_remote_code=True,
             local_files_only=True,
         )
+        if hasattr(self.processor, 'image_processor'):
+            ip = self.processor.image_processor
+            for attr in ['max_dynamic_tiles', 'min_dynamic_tiles']:
+                if hasattr(ip, attr):
+                    setattr(ip, attr, 1)
+            if hasattr(ip, 'dynamic_image_size'):
+                ip.dynamic_image_size = False
+            print("[GR00T] Patched processor image_processor tiles")
         self.processor.eval()
         print("[GR00T] Model loaded successfully!")
 
@@ -157,14 +168,15 @@ class GR00TInference:
             if isinstance(v, torch.Tensor):
                 print(f"[DEBUG] collated['{k}'] shape={v.shape}, dtype={v.dtype}", flush=True)
 
-        if 'inputs' in collated and isinstance(collated['inputs'], dict):
-            for k, v in collated['inputs'].items():
-                if isinstance(v, torch.Tensor):
-                    collated['inputs'][k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
-        else:
-            for k, v in collated.items():
-                if isinstance(v, torch.Tensor):
-                    collated[k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
+        def _to_device(obj):
+            if isinstance(obj, torch.Tensor):
+                return obj.to(self.device, dtype=torch.float16 if obj.is_floating_point() else obj.dtype)
+            elif isinstance(obj, dict):
+                return {k: _to_device(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return type(obj)(_to_device(v) for v in obj)
+            return obj
+        collated = _to_device(collated)
 
         output = self.model.get_action(**collated)
         action_pred = output["action_pred"].float().cpu().numpy()
@@ -288,7 +300,10 @@ def _get_camera_frame(sensor):
     if sensor is None:
         return None
     try:
-        rgb = sensor.data.output["rgb"]
+        try:
+            rgb = sensor._data.output["rgb"]
+        except Exception:
+            rgb = sensor.data.output["rgb"]
         if rgb is None:
             return None
 
