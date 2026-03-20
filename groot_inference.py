@@ -130,7 +130,7 @@ class GR00TInference:
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         def to_tchw(img):
-            return np.transpose(img, (2, 0, 1))[np.newaxis].astype(np.uint8)  # (1, 3, 256, 256)
+            return img[np.newaxis].astype(np.uint8)  # (1, H, W, C) = (1, 256, 256, 3)
 
         cam  = to_tchw(camera_frame   if camera_frame   is not None else dummy_image)
         cam3 = to_tchw(camera_3_frame if camera_3_frame is not None else dummy_image)
