@@ -96,7 +96,7 @@ class GR00TInference:
         from gr00t.data.embodiment_tags import EmbodimentTag
         from gr00t.data.types import MessageType, VLAStepData
 
-        dummy_pil = PILImage.new('RGB', (256, 256), color=(128, 128, 128))
+        dummy_pil = PILImage.new('RGB', (64, 64), color=(128, 128, 128))
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         cam  = camera_frame   if camera_frame   is not None else dummy_image
@@ -258,7 +258,7 @@ def _get_camera_frame(sensor):
             v_frame = np.asarray(frame_data).copy()
         if v_frame.dtype != np.uint8:
             v_frame = (v_frame * 255).astype(np.uint8) if v_frame.max() <= 1.0 else v_frame.astype(np.uint8)
-        pil = PILImage.fromarray(v_frame).resize((256, 256))
+        pil = PILImage.fromarray(v_frame).resize((64, 64))
         return np.array(pil, dtype=np.uint8)
     except Exception:
         return None
