@@ -40,6 +40,9 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import subtract_frame_transforms, quat_mul, quat_from_euler_xyz
 from isaaclab_assets import UR10_CFG, FRANKA_PANDA_HIGH_PD_CFG
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
 # Monkey-patch warp
 try:
     import warp as wp
@@ -71,13 +74,14 @@ class GR00TInference:
         import gr00t.configs.data.custom_embodiment
         from gr00t.model.gr00t_n1d6.gr00t_n1d6 import Gr00tN1d6
         from transformers import AutoProcessor
+        from gr00t.data.types import MessageType
 
         self.model = Gr00tN1d6.from_pretrained(
             str(Path(checkpoint_path).resolve()),
             trust_remote_code=True,
         )
         self.model.eval()
-        self.model.to(device=device, dtype=torch.bfloat16)
+        self.model.to(device=device, dtype=torch.float16)
 
         processor_path = str(Path(checkpoint_path).parent / "processor")
         self.processor = AutoProcessor.from_pretrained(
@@ -88,11 +92,14 @@ class GR00TInference:
         self.processor.eval()
         print("[GR00T] Model loaded successfully!")
 
+        self.base_message = {
+            "type": MessageType.EPISODE_STEP.value,
+            "content": None,
+        }
+
     @torch.no_grad()
     def predict(self, joint_positions: np.ndarray, ee_pose: np.ndarray,
-                camera_frame: np.ndarray = None,
-                camera_3_frame: np.ndarray = None,
-                camera_9_frame: np.ndarray = None) -> np.ndarray:
+                camera_frame: np.ndarray = None) -> np.ndarray:
         from gr00t.data.embodiment_tags import EmbodimentTag
         from gr00t.data.types import MessageType, VLAStepData
 
@@ -100,14 +107,12 @@ class GR00TInference:
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         cam  = camera_frame   if camera_frame   is not None else dummy_image
-        cam3 = camera_3_frame if camera_3_frame is not None else dummy_image
-        cam9 = camera_9_frame if camera_9_frame is not None else dummy_image
+        cam3 = None
+        cam9 = None
 
         vla_step = VLAStepData(
             images={
-                "camera":   cam,
-                "camera_3": cam3,
-                "camera_9": cam9,
+                "camera":   cam
             },
             states={
                 "joint_positions": joint_positions.reshape(1, -1).astype(np.float32),
@@ -118,13 +123,13 @@ class GR00TInference:
             embodiment=EmbodimentTag.NEW_EMBODIMENT,
         )
 
-        messages = [{"type": MessageType.EPISODE_STEP.value, "content": vla_step}]
-        processed = self.processor(messages)
+        self.base_message["content"] = vla_step
+        processed = self.processor([self.base_message])
         collated = self.processor.collator([processed])
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
-                collated[k] = v.to(self.device, dtype=torch.bfloat16 if v.is_floating_point() else v.dtype)
+                collated[k] = v.to(self.device, dtype=torch.float16 if v.is_floating_point() else v.dtype)
 
         output = self.model.get_action(**collated)
         action_pred = output["action_pred"].float().cpu().numpy()
@@ -248,19 +253,22 @@ def _get_camera_frame(sensor):
     if sensor is None:
         return None
     try:
-        rgb_data = sensor.data.output["rgb"]
-        if rgb_data is None:
+        rgb = sensor.data.output["rgb"]
+        if rgb is None:
             return None
-        frame_data = rgb_data[0] if len(rgb_data.shape) == 4 else rgb_data
-        if hasattr(frame_data, 'cpu'):
-            v_frame = frame_data.clone().cpu().numpy()
-        else:
-            v_frame = np.asarray(frame_data).copy()
-        if v_frame.dtype != np.uint8:
-            v_frame = (v_frame * 255).astype(np.uint8) if v_frame.max() <= 1.0 else v_frame.astype(np.uint8)
-        pil = PILImage.fromarray(v_frame).resize((64, 64))
-        return np.array(pil, dtype=np.uint8)
-    except Exception:
+
+        frame = rgb[0] if len(rgb.shape) == 4 else rgb  # (H, W, C)
+
+        # Normalize + resize ON GPU
+        frame = frame.permute(2, 0, 1).unsqueeze(0).float()  # (1, C, H, W)
+        frame = torch.nn.functional.interpolate(
+            frame, size=(32, 32), mode="bilinear", align_corners=False
+        )
+        frame = frame.squeeze(0).permute(1, 2, 0)  # back to HWC
+
+        return frame.byte().cpu().numpy()  # only convert at end
+
+    except:
         return None
 
 
@@ -328,15 +336,11 @@ def run_simulator(sim, scene, groot: GR00TInference):
             ee_pose_np   = ee_pose_w[0].cpu().numpy()
 
             cam_frame  = _get_camera_frame(camera_sensor)
-            cam3_frame = _get_camera_frame(camera_3_sensor)
-            cam9_frame = _get_camera_frame(camera_9_sensor)
 
             try:
                 action = groot.predict(
                     joint_pos_np, ee_pose_np,
-                    camera_frame=cam_frame,
-                    camera_3_frame=cam3_frame,
-                    camera_9_frame=cam9_frame,
+                    camera_frame=cam_frame
                 )
                 predicted_joints    = action[:7]
                 gripper_target_norm = float(np.clip(action[7], 0.0, 1.0))
