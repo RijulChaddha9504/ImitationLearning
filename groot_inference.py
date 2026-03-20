@@ -1,15 +1,16 @@
-import argparse
-import sys
-import numpy as np
-from PIL import Image as PILImage
-from pathlib import Path
-from datetime import datetime
 import os
 import sys
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 os.environ["VIDEO_MAX_PIXELS"] = str(256 * 256)
 os.environ["MAX_PIXELS"] = str(256 * 256)        # ADD THIS - Eagle checks this key too
-os.environ["MIN_PIXELS"] = str(4 * 28 * 28)      # ADD THIS
+os.environ["MIN_PIXELS"] = str(4 * 28 * 28)    
+
+import argparse
+import sys
+import numpy as np
+from PIL import Image as PILImage
+from pathlib import Path
+from datetime import datetime  # ADD THIS
 
 """Robot Arm GR00T Inference - runs fine-tuned model to control robot in IsaacLab"""
 
