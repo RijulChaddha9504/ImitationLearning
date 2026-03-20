@@ -99,7 +99,7 @@ class GR00TInference:
 
     @torch.no_grad()
     def predict(self, joint_positions: np.ndarray, ee_pose: np.ndarray,
-                camera_frame: np.ndarray = None) -> np.ndarray:
+                camera_frame: np.ndarray = None, camera_3_frame: np.ndarray = None, camera_9_frame: np.ndarray = None) -> np.ndarray:
         from gr00t.data.embodiment_tags import EmbodimentTag
         from gr00t.data.types import MessageType, VLAStepData
 
@@ -107,12 +107,14 @@ class GR00TInference:
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         cam  = camera_frame   if camera_frame   is not None else dummy_image
-        cam3 = None
-        cam9 = None
+        cam3 = camera_3_frame if camera_3_frame is not None else dummy_image
+        cam9 = camera_9_frame if camera_9_frame is not None else dummy_image
 
         vla_step = VLAStepData(
             images={
-                "camera":   cam
+                "camera": cam,
+                "camera_3": cam3,
+                "camera_9": cam9,
             },
             states={
                 "joint_positions": joint_positions.reshape(1, -1).astype(np.float32),
@@ -336,11 +338,15 @@ def run_simulator(sim, scene, groot: GR00TInference):
             ee_pose_np   = ee_pose_w[0].cpu().numpy()
 
             cam_frame  = _get_camera_frame(camera_sensor)
+            cam3_frame = _get_camera_frame(camera_3_sensor)
+            cam9_frame = _get_camera_frame(camera_9_sensor)
 
             try:
                 action = groot.predict(
                     joint_pos_np, ee_pose_np,
-                    camera_frame=cam_frame
+                    camera_frame=cam_frame,
+                    camera_3_frame=cam3_frame,
+                    camera_9_frame=cam9_frame,
                 )
                 predicted_joints    = action[:7]
                 gripper_target_norm = float(np.clip(action[7], 0.0, 1.0))
