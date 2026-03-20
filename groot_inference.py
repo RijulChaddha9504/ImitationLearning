@@ -105,7 +105,7 @@ class GR00TInference:
         from gr00t.data.embodiment_tags import EmbodimentTag
         from gr00t.data.types import MessageType, VLAStepData
 
-        dummy_pil = PILImage.new('RGB', (64, 64), color=(128, 128, 128))
+        dummy_pil = PILImage.new('RGB', (256, 256), color=(128, 128, 128))
         dummy_image = np.array(dummy_pil, dtype=np.uint8)
 
         cam  = camera_frame   if camera_frame   is not None else dummy_image
@@ -280,7 +280,8 @@ def _get_camera_frame(sensor):
 
         return frame.byte().cpu().numpy()  # only convert at end
 
-    except:
+    except Exception as e:
+        print(f"[DEBUG] Camera frame error: {e}")
         return None
 
 
