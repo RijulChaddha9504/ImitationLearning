@@ -142,7 +142,12 @@ class GR00TInference:
 
         self.base_message["content"] = vla_step
         processed = self.processor([self.base_message])
+        print(f"[DEBUG] processed keys: {list(processed.keys())}", flush=True)
         collated = self.processor.collator([processed])
+        print(f"[DEBUG] collated keys: {list(collated.keys())}", flush=True)
+        for k, v in collated.items():
+            if isinstance(v, torch.Tensor):
+                print(f"[DEBUG] collated['{k}'] shape={v.shape}", flush=True)
 
         for k, v in collated.items():
             if isinstance(v, torch.Tensor):
